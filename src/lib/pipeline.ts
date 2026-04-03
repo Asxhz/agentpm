@@ -326,7 +326,7 @@ async function executeStageWork(
       ["Lightning fast: Sub-50ms response times globally", "Secure by default: Enterprise-grade security built in", "Scale infinitely: From 0 to millions with zero config"],
       "Get Started",
     );
-    const larpResult = deployToLarpClick(site, projectName);
+    const larpResult = await deployToLarpClick(site, projectName);
     const vercelResult = await deployToVercel(site, projectName);
 
     let output = `Site deployed and live.\n` +
