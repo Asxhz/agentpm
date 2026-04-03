@@ -15,7 +15,10 @@ import { initGovernance, evaluatePayment as govCheck, recordPayment as govRecord
 import { getProvidersByCategory } from "./marketplace";
 import { searchDomains, purchaseDomain } from "./agents/domain";
 import { generateLandingPage, deployToVercel, deployToLarpClick } from "./agents/deploy";
-import { buildX402Payment, getAgentWallet } from "./x402-real";
+// Lazy import x402-real to avoid crashes when ethers has issues
+async function getX402() {
+  try { return await import("./x402-real"); } catch { return null; }
+}
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic();
@@ -474,18 +477,23 @@ export async function executePipeline(
 
       // x402 Payment
       // Real EIP-712 signing via ethers.js on Base Sepolia
-      const realWallet = getAgentWallet();
+      let signerAddress = wallet.address;
       let realSignature: unknown = null;
       try {
-        const x402Payload = await buildX402Payment(chosen.provider.walletAddress, chosen.provider.price);
-        realSignature = x402Payload;
-      } catch { /* signing may fail without funded wallet, continue with simulation */ }
+        const x402Mod = await getX402();
+        if (x402Mod) {
+          const rw = x402Mod.getAgentWallet();
+          signerAddress = rw.address;
+          const payload = await x402Mod.buildX402Payment(chosen.provider.walletAddress, chosen.provider.price);
+          realSignature = payload;
+        }
+      } catch { /* signing may fail, continue with simulation */ }
 
       emit(onEvent, "payment", {
         message: `Signing x402 payment: $${chosen.provider.price.toFixed(4)} to ${chosen.provider.name}`,
         phase: "signing",
         amount: chosen.provider.price,
-        from: realWallet.address,
+        from: signerAddress,
         to: chosen.provider.walletAddress,
         realSignature: realSignature ? true : false,
         network: "base-sepolia",
@@ -509,7 +517,7 @@ export async function executePipeline(
         txHash: x402.settlement.txHash,
         amount: chosen.provider.price,
         newBalance: wallet.balance,
-        signerAddress: realWallet.address,
+        signerAddress,
         realSignature: realSignature ? true : false,
         stageId: stage.id,
       });
