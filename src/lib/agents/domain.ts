@@ -196,3 +196,120 @@ export function getTLDPrices(): { tld: string; price: number; type: "traditional
     type: ["crypto", "x", "wallet", "nft", "blockchain", "dao", "eth"].includes(tld) ? "crypto" as const : "traditional" as const,
   })).sort((a, b) => a.price - b.price);
 }
+
+// ============================================================
+// Domain Purchase System
+// ============================================================
+
+export interface PurchasedDomain {
+  domain: string;
+  tld: string;
+  price: number;
+  purchasedAt: string;
+  expiresAt: string;
+  txHash: string;
+  registrar: string;
+  status: "active" | "pending" | "expired";
+  dnsRecords: { type: string; name: string; value: string }[];
+  connectedTo?: string; // deployment URL
+}
+
+const purchasedDomains = new Map<string, PurchasedDomain>();
+
+function genTxHash(): string {
+  const hex = "0123456789abcdef";
+  let h = "0x";
+  for (let i = 0; i < 64; i++) h += hex[Math.floor(Math.random() * 16)];
+  return h;
+}
+
+// Purchase a domain (checks real availability first, then simulates purchase via x402)
+export async function purchaseDomain(domain: string): Promise<{
+  success: boolean;
+  domain?: PurchasedDomain;
+  error?: string;
+  availabilityCheck: DomainCheckResult;
+}> {
+  // Step 1: Real availability check
+  const check = await checkDomain(domain);
+
+  if (!check.available) {
+    return {
+      success: false,
+      error: `${domain} is not available (registered${check.registrar ? ` by ${check.registrar}` : ""}${check.expiresAt ? `, expires ${check.expiresAt}` : ""})`,
+      availabilityCheck: check,
+    };
+  }
+
+  if (!check.price) {
+    return {
+      success: false,
+      error: `No pricing available for .${check.tld} domains`,
+      availabilityCheck: check,
+    };
+  }
+
+  // Step 2: Simulate x402 purchase payment
+  const now = new Date();
+  const expires = new Date(now);
+  expires.setFullYear(expires.getFullYear() + 1);
+
+  const isCrypto = ["crypto", "x", "wallet", "nft", "blockchain", "dao", "eth"].includes(check.tld);
+
+  const purchased: PurchasedDomain = {
+    domain: check.domain,
+    tld: check.tld,
+    price: check.price,
+    purchasedAt: now.toISOString(),
+    expiresAt: isCrypto ? "never (one-time purchase)" : expires.toISOString(),
+    txHash: genTxHash(),
+    registrar: isCrypto
+      ? (check.tld === "eth" ? "ENS (Ethereum Name Service)" : "Unstoppable Domains")
+      : "Spaceship (via x402)",
+    status: "active",
+    dnsRecords: [],
+    connectedTo: undefined,
+  };
+
+  purchasedDomains.set(check.domain, purchased);
+
+  return {
+    success: true,
+    domain: purchased,
+    availabilityCheck: check,
+  };
+}
+
+// Connect a purchased domain to a deployment
+export function connectDomain(domain: string, deploymentUrl: string): {
+  success: boolean;
+  dnsRecords?: { type: string; name: string; value: string }[];
+  error?: string;
+} {
+  const purchased = purchasedDomains.get(domain);
+  if (!purchased) {
+    return { success: false, error: `${domain} is not in your purchased domains` };
+  }
+
+  // Generate DNS records needed
+  const records = [
+    { type: "A", name: "@", value: "76.76.21.21" },
+    { type: "CNAME", name: "www", value: "cname.vercel-dns.com" },
+  ];
+
+  purchased.dnsRecords = records;
+  purchased.connectedTo = deploymentUrl;
+  purchasedDomains.set(domain, purchased);
+
+  return { success: true, dnsRecords: records };
+}
+
+// Get all purchased domains
+export function getPurchasedDomains(): PurchasedDomain[] {
+  return Array.from(purchasedDomains.values());
+}
+
+// Get a specific purchased domain
+export function getPurchasedDomain(domain: string): PurchasedDomain | undefined {
+  return purchasedDomains.get(domain);
+}

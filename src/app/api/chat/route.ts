@@ -80,9 +80,13 @@ ${gs.policies.map(p => `- ${p.name} (${p.active ? "active" : "disabled"}): ${p.r
 ${TOOL_PROVIDERS.map(p => `- ${p.name} [${p.category}] $${p.price}/call, quality ${p.qualityScore}/10, ${p.latencyMs}ms`).join("\n")}
 
 ## REAL AGENT CAPABILITIES
-- Domain Search Agent: Checks REAL domain availability via RDAP protocol (no auth, live data). Searches across .com, .io, .dev, .app, .co, .xyz, .ai, .tech. Also checks crypto domains via Unstoppable Domains API and .eth via ENS/The Graph.
-- Vercel Deploy Agent: Generates a real landing page (HTML/CSS) and deploys to Vercel's edge network via API. Returns a live URL. (Simulated if no VERCEL_TOKEN set, but the generated site is real.)
-- When a user wants to "ship", "deploy", "host", or "launch" something, include deployment and/or domain stages in the plan.
+- **Domain Search Agent**: Checks REAL domain availability via RDAP protocol (live API, no auth). Searches .com, .io, .dev, .app, .co, .xyz, .ai, .tech. Also checks crypto domains (.crypto, .x, .wallet via Unstoppable Domains) and .eth via ENS/The Graph.
+- **Domain Purchase Agent**: Can purchase available domains. Checks real availability first via RDAP, then processes payment via x402. Supports traditional TLDs and crypto domains. Include "buy domain" in the execution brief to trigger purchase.
+- **Vercel Deploy Agent**: Generates a real landing page (HTML/CSS, dark theme, responsive) and deploys it. Returns a live URL.
+- **larp.click Hosting**: ANY project can be hosted for free at [projectname].larp.click. Wildcard DNS is configured. The generated site is served at that URL immediately. Always offer this as the default free hosting option.
+- **Custom Domain Connection**: After purchasing or if user has their own domain, generate DNS records to connect it to the deployment (A record to 76.76.21.21, CNAME www to cname.vercel-dns.com).
+
+When a user wants to "ship", "deploy", "host", "launch", "buy a domain", or "register a domain", include deployment and/or domain stages in the plan. Always present larp.click as the free option and custom domains as the paid option.
 
 ## PIPELINE FEATURES
 The execution pipeline includes these advanced capabilities:

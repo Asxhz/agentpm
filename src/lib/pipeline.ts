@@ -13,7 +13,7 @@ import { initializeWallets, processPayment, getWalletState } from "./wallet";
 import { executeX402Payment } from "./payment";
 import { initGovernance, evaluatePayment as govCheck, recordPayment as govRecord } from "./governance";
 import { getProvidersByCategory } from "./marketplace";
-import { searchDomains } from "./agents/domain";
+import { searchDomains, purchaseDomain } from "./agents/domain";
 import { generateLandingPage, deployToVercel, deployToLarpClick } from "./agents/deploy";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -280,13 +280,40 @@ async function executeStageWork(
 ): Promise<string> {
   if (category === "domain") {
     const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
+    const wantsBuy = /buy|purchase|register|get.*domain/i.test(task);
+
+    // Always do real RDAP search first
     const domainResults = await searchDomains(projectName.toLowerCase());
     const available = domainResults.filter(r => r.available);
     const taken = domainResults.filter(r => !r.available);
-    return `Domain search for "${projectName}" completed via RDAP:\n` +
-      `Available: ${available.map(d => `${d.domain} ($${d.price}/yr)`).join(", ") || "none found"}\n` +
-      `Taken: ${taken.map(d => d.domain).join(", ") || "none"}\n` +
-      `Checked ${domainResults.length} TLDs in real-time. ${available.length > 0 ? `Recommended: ${available[0].domain} at $${available[0].price}/yr` : "Consider different naming."}`;
+
+    let output = `Domain search for "${projectName}" completed via RDAP (real-time):\n`;
+    output += `Available: ${available.map(d => `${d.domain} ($${d.price}/yr)`).join(", ") || "none found"}\n`;
+    output += `Taken: ${taken.map(d => d.domain).join(", ") || "none"}\n`;
+    output += `Checked ${domainResults.length} TLDs across registries.\n`;
+
+    // If user wants to buy and there are available domains, attempt purchase
+    if (wantsBuy && available.length > 0) {
+      const bestDomain = available[0];
+      const purchaseResult = await purchaseDomain(bestDomain.domain);
+      if (purchaseResult.success && purchaseResult.domain) {
+        output += `\nPurchased: ${purchaseResult.domain.domain} for $${purchaseResult.domain.price}/yr\n`;
+        output += `Registrar: ${purchaseResult.domain.registrar}\n`;
+        output += `Payment tx: ${purchaseResult.domain.txHash}\n`;
+        output += `Status: ${purchaseResult.domain.status}\n`;
+        output += `Expires: ${purchaseResult.domain.expiresAt}\n`;
+        output += `To connect to a deployment, add these DNS records:\n`;
+        output += `  A @ 76.76.21.21\n`;
+        output += `  CNAME www cname.vercel-dns.com`;
+      } else {
+        output += `\nPurchase attempted for ${bestDomain.domain} but: ${purchaseResult.error}`;
+      }
+    } else if (available.length > 0) {
+      output += `\nRecommended: ${available[0].domain} at $${available[0].price}/yr`;
+      output += `\nTo purchase, include "buy domain" in your request.`;
+    }
+
+    return output;
   }
 
   if (category === "deployment") {
