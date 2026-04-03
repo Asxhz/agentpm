@@ -10,18 +10,59 @@ export const maxDuration = 120;
 
 const anthropic = new Anthropic();
 
+// Session history: tracks all executions, deployed sites, and spend across the conversation
+interface SessionExecution {
+  brief: string;
+  stagesCompleted: number;
+  totalCost: number;
+  providers: string[];
+  deployedUrls: string[];
+  timestamp: string;
+}
+
 const conversations = new Map<string, { role: string; content: string }[]>();
+const sessionExecutions = new Map<string, SessionExecution[]>();
 
 function getConvo(id: string) {
   if (!conversations.has(id)) conversations.set(id, []);
   return conversations.get(id)!;
 }
 
-function buildSystemPrompt() {
+function getSessionExecs(id: string): SessionExecution[] {
+  if (!sessionExecutions.has(id)) sessionExecutions.set(id, []);
+  return sessionExecutions.get(id)!;
+}
+
+function buildSystemPrompt(sessionId: string = "default") {
   const w = initializeWallets();
   const ws = getWalletState();
   initGovernance();
   const gs = getGovernanceState();
+  const execHistory = getSessionExecs(sessionId);
+
+  // Build execution history section
+  let executionHistoryBlock = "";
+  if (execHistory.length > 0) {
+    const totalSessionSpend = execHistory.reduce((s, e) => s + e.totalCost, 0);
+    const allDeployedUrls = execHistory.flatMap(e => e.deployedUrls);
+    const allProviders = [...new Set(execHistory.flatMap(e => e.providers))];
+
+    executionHistoryBlock = `
+## SESSION EXECUTION HISTORY (${execHistory.length} execution(s) this session)
+- Total spent across all executions: $${totalSessionSpend.toFixed(4)}
+- Total stages completed: ${execHistory.reduce((s, e) => s + e.stagesCompleted, 0)}
+- Unique providers used: ${allProviders.join(", ") || "none"}
+${allDeployedUrls.length > 0 ? `- Live deployed sites: ${allDeployedUrls.join(", ")}` : "- No sites deployed yet"}
+
+### Past Executions:
+${execHistory.map((e, i) => `${i + 1}. "${e.brief}" — ${e.stagesCompleted} stages, $${e.totalCost.toFixed(4)}, via ${e.providers.join(" -> ")}${e.deployedUrls.length > 0 ? `, deployed: ${e.deployedUrls.join(", ")}` : ""} (${e.timestamp})`).join("\n")}
+`;
+  } else {
+    executionHistoryBlock = `
+## SESSION EXECUTION HISTORY
+No executions yet this session. The user has not run any pipelines.
+`;
+  }
 
   return `You are AgentPM — an autonomous AI project manager with its own crypto wallet on Base Sepolia.
 
@@ -30,7 +71,7 @@ function buildSystemPrompt() {
 - Balance: $${ws.wallet?.balance.toFixed(4) || "10.0000"} USDC
 - Total spent this session: $${ws.totalSpent.toFixed(4)}
 - Transactions: ${ws.transactions.length}
-
+${executionHistoryBlock}
 ## GOVERNANCE POLICIES
 ${gs.policies.map(p => `- ${p.name} (${p.active ? "active" : "disabled"}): ${p.rules.map(r => `${r.type}=${JSON.stringify(r.value)}`).join(", ")}`).join("\n")}
 - Daily spend: $${gs.dailySpend.toFixed(4)} / Daily tx count: ${gs.dailyTxCount}
@@ -42,6 +83,15 @@ ${TOOL_PROVIDERS.map(p => `- ${p.name} [${p.category}] $${p.price}/call, quality
 - Domain Search Agent: Checks REAL domain availability via RDAP protocol (no auth, live data). Searches across .com, .io, .dev, .app, .co, .xyz, .ai, .tech. Also checks crypto domains via Unstoppable Domains API and .eth via ENS/The Graph.
 - Vercel Deploy Agent: Generates a real landing page (HTML/CSS) and deploys to Vercel's edge network via API. Returns a live URL. (Simulated if no VERCEL_TOKEN set, but the generated site is real.)
 - When a user wants to "ship", "deploy", "host", or "launch" something, include deployment and/or domain stages in the plan.
+
+## PIPELINE FEATURES
+The execution pipeline includes these advanced capabilities:
+- **Automatic Retry**: If a provider fails (execution error, payment failure, or governance block), the pipeline automatically tries the next-best provider. Up to 3 attempts per stage.
+- **Quality Gate**: After each stage, output is scored on detail, quantitative data, and actionable insights. If quality falls below 6.5/10, the pipeline escalates to a higher-quality (usually pricier) provider automatically.
+- **Cost Tracking**: Real-time running totals tracked per stage, including retry spend and quality-rerun spend. You'll see exact cost breakdowns in the execution results.
+- **Timing Data**: Each stage records actual execution time and total stage time (including retries). Use this to give accurate performance summaries.
+
+When relaying execution results, always mention: quality scores, retry attempts (if any), cost breakdown, and timing.
 
 ## HOW YOU WORK
 You help users plan and execute projects. You are conversational, opinionated, and proactive. You:
@@ -74,13 +124,37 @@ Before EVERY execution, you MUST present the full plan as a clear table:
 
 Then ask: "This will cost $X.XX from your wallet ($Y.YY remaining). Want me to proceed? You can also ask me to swap tools, skip stages, or adjust the budget."
 
+## POST-EXECUTION DEBRIEF (CRITICAL)
+After EVERY pipeline execution completes, you MUST provide a detailed debrief with these sections:
+
+### 1. Execution Summary
+- Stages completed, total cost, total time
+- Any retries that happened and why
+- Quality scores per stage
+
+### 2. What Worked Well
+- Which providers delivered strong results (cite quality scores)
+- Cost efficiency analysis: was the spend justified?
+- Any stages that came in under budget or over quality expectations
+
+### 3. What Could Be Improved
+- Any stages with quality scores below 8/10 — what was missing
+- If retries happened, note the provider that failed and why
+- Cost optimization opportunities (e.g., "Stage 2 used Claude Opus at $0.015 but Llama 4 at $0.002 could have worked for this task")
+
+### 4. Suggested Next Actions (with specific costs)
+- Always offer 3-5 concrete next steps with dollar amounts
+- Examples: "Run A/B test on copy ($0.030)", "Generate social media kit ($0.048)", "Deploy to custom domain ($0.105)"
+- If a site was deployed, suggest: analytics setup, SEO optimization, content updates
+- Reference the remaining wallet balance and what it can still cover
+
 IMPORTANT RULES:
 - NEVER execute without explicit user approval. Always show the plan table first.
 - If the user says "no" or "change X", adjust the plan and re-propose.
 - Be specific about costs. Show exact dollar amounts for each stage.
 - Reference governance policies when relevant ("this stays under the $0.50/tx limit")
-- After execution, offer concrete next steps with costs.
-- Remember everything. Reference previous results and decisions.
+- After execution, always give the full debrief as described above.
+- Remember everything. Reference previous results, decisions, and execution history.
 - Be concise. No filler. Think like a senior PM at Stripe.
 - When discussing tools, cite specific providers and their tradeoffs.
 - If asked about your wallet, policies, or capabilities, give real details from above.
@@ -109,7 +183,7 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        const systemPrompt = buildSystemPrompt();
+        const systemPrompt = buildSystemPrompt(sessionId);
         const messages = history.map(m => ({
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -118,7 +192,7 @@ export async function POST(req: NextRequest) {
         // Stream the Claude response
         const stream = anthropic.messages.stream({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 2048,
+          max_tokens: 4096,
           system: systemPrompt,
           messages,
         });
@@ -150,15 +224,116 @@ export async function POST(req: NextRequest) {
           const done = pipelineEvents.find(e => e.type === "complete");
           if (done) {
             const cd = done.data as Record<string, unknown>;
-            const resultSummaries = pipelineEvents
-              .filter(e => e.type === "result")
-              .map(e => { const d = e.data as Record<string, unknown>; return `[${d.stageName}] via ${d.provider} ($${(d.cost as number)?.toFixed(3)}): ${(d.output as string)?.slice(0, 200)}`; })
-              .join("\n");
 
-            history.push({
-              role: "assistant",
-              content: `[Execution complete: ${cd.totalSteps} stages, $${(cd.totalCost as number)?.toFixed(4)} spent, $${(cd.walletBalance as number)?.toFixed(4)} remaining]\n\n${resultSummaries}`,
+            // Build detailed result summaries with quality scores, timing, and retry info
+            const resultDetails = pipelineEvents
+              .filter(e => e.type === "result")
+              .map(e => {
+                const d = e.data as Record<string, unknown>;
+                const attempts = (d.attempts as number) || 1;
+                const qualityScore = d.qualityScore as number | undefined;
+                const execTime = d.executionTimeMs as number | undefined;
+                const stageTime = d.totalStageTimeMs as number | undefined;
+                let line = `[${d.stageName}] via ${d.provider} ($${(d.cost as number)?.toFixed(3)})`;
+                if (qualityScore !== undefined) line += ` | quality: ${qualityScore}/10`;
+                if (execTime !== undefined) line += ` | exec: ${execTime}ms`;
+                if (stageTime !== undefined) line += ` | total: ${stageTime}ms`;
+                if (attempts > 1) line += ` | attempts: ${attempts}`;
+                line += `\n  Output: ${(d.output as string)?.slice(0, 300)}`;
+                return line;
+              })
+              .join("\n\n");
+
+            // Extract retry events for the debrief context
+            const retryEvents = pipelineEvents
+              .filter(e => e.type === "retry")
+              .map(e => {
+                const d = e.data as Record<string, unknown>;
+                return `Retry on stage "${d.stageId}": ${d.message}`;
+              });
+
+            // Extract quality gate results
+            const qualityGates = pipelineEvents
+              .filter(e => e.type === "quality_gate")
+              .map(e => {
+                const d = e.data as Record<string, unknown>;
+                return `${d.provider}: ${d.score}/10 (${d.passed ? "PASSED" : "FAILED"}) — ${d.feedback}`;
+              });
+
+            // Extract cost breakdown
+            const costBreakdown = cd.costBreakdown as Record<string, unknown> | undefined;
+            let costSection = "";
+            if (costBreakdown) {
+              costSection = `\nCost breakdown: total=$${(costBreakdown.totalSpent as number)?.toFixed(4)}, retry spend=$${(costBreakdown.retrySpend as number)?.toFixed(4)}, quality rerun spend=$${(costBreakdown.qualityRerunSpend as number)?.toFixed(4)}`;
+            }
+
+            // Extract deployed URLs for session tracking
+            const deployedUrls: string[] = [];
+            pipelineEvents.filter(e => e.type === "result").forEach(e => {
+              const d = e.data as Record<string, unknown>;
+              const output = d.output as string || "";
+              const urlMatches = output.match(/(?:Local URL|Vercel URL|URL): (https?:\/\/[^\s]+)/g);
+              if (urlMatches) {
+                urlMatches.forEach(m => {
+                  const url = m.replace(/^(?:Local URL|Vercel URL|URL): /, "");
+                  deployedUrls.push(url);
+                });
+              }
             });
+
+            // Track this execution in session history
+            const execProviders = pipelineEvents
+              .filter(e => e.type === "result")
+              .map(e => (e.data as Record<string, unknown>).provider as string);
+            const execRecord: SessionExecution = {
+              brief,
+              stagesCompleted: cd.totalSteps as number,
+              totalCost: cd.totalCost as number,
+              providers: execProviders,
+              deployedUrls,
+              timestamp: new Date().toISOString(),
+            };
+            getSessionExecs(sessionId).push(execRecord);
+
+            const executionSummary = [
+              `[Execution complete: ${cd.totalSteps} stages, $${(cd.totalCost as number)?.toFixed(4)} spent, $${(cd.walletBalance as number)?.toFixed(4)} remaining, ${(cd.pipelineDurationMs as number) || 0}ms total]`,
+              costSection,
+              `\n--- Stage Results ---\n${resultDetails}`,
+              retryEvents.length > 0 ? `\n--- Retries ---\n${retryEvents.join("\n")}` : "",
+              qualityGates.length > 0 ? `\n--- Quality Gates ---\n${qualityGates.join("\n")}` : "",
+              deployedUrls.length > 0 ? `\n--- Deployed Sites ---\n${deployedUrls.join("\n")}` : "",
+            ].filter(Boolean).join("\n");
+
+            history.push({ role: "assistant", content: executionSummary });
+
+            // Stream a debrief from Claude using the execution results
+            send("debrief_start", { message: "Generating execution debrief..." });
+
+            const debriefMessages = [
+              ...messages,
+              { role: "assistant" as const, content: fullText },
+              { role: "assistant" as const, content: executionSummary },
+              { role: "user" as const, content: "The pipeline just finished. Give the post-execution debrief as described in your instructions. Be specific: cite exact quality scores, costs, provider names, and timing. Suggest 3-5 concrete next actions with exact dollar costs from the available tools." },
+            ];
+
+            const debriefStream = anthropic.messages.stream({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 2048,
+              system: buildSystemPrompt(sessionId),
+              messages: debriefMessages,
+            });
+
+            let debriefText = "";
+            for await (const debriefEvent of debriefStream) {
+              if (debriefEvent.type === "content_block_delta" && debriefEvent.delta.type === "text_delta") {
+                debriefText += debriefEvent.delta.text;
+                send("text_delta", { text: debriefEvent.delta.text });
+              }
+            }
+
+            if (debriefText) {
+              history.push({ role: "assistant", content: debriefText });
+            }
           }
 
           send("execution_complete", done?.data || {});

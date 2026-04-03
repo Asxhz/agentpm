@@ -221,7 +221,105 @@ function pickProvider(category: string, priority: string) {
   return scored;
 }
 
-// Main pipeline
+// Retry configuration
+const MAX_RETRIES = 2; // try up to 2 fallback providers before giving up
+const QUALITY_THRESHOLD = 6.5; // minimum quality score out of 10 to pass quality gate
+const QUALITY_RERUN_LIMIT = 1; // max times to re-run a stage for quality
+
+// Quality gate: evaluates stage output and returns a score
+function evaluateQuality(output: string, stageName: string, category: string): { score: number; feedback: string } {
+  // Heuristic quality scoring based on output richness
+  let score = 5.0;
+  const feedback: string[] = [];
+
+  // Length and detail checks
+  const wordCount = output.split(/\s+/).length;
+  if (wordCount > 100) { score += 1.5; feedback.push("Detailed output"); }
+  else if (wordCount > 50) { score += 0.8; feedback.push("Adequate detail"); }
+  else { feedback.push("Output could be more detailed"); }
+
+  // Check for quantitative data (numbers, percentages, dollar amounts)
+  const quantMatches = output.match(/\d+(\.\d+)?(%|\$|\/10|ms|KB|px|x\d)/g);
+  if (quantMatches && quantMatches.length >= 5) { score += 1.2; feedback.push("Rich quantitative data"); }
+  else if (quantMatches && quantMatches.length >= 2) { score += 0.5; feedback.push("Some metrics included"); }
+  else { feedback.push("Could include more metrics"); }
+
+  // Check for actionable recommendations
+  const actionWords = /recommend|suggest|should|optimal|best|top|key finding|confidence|projected/i;
+  if (actionWords.test(output)) { score += 0.8; feedback.push("Includes actionable insights"); }
+
+  // Category-specific checks
+  if (category === "web-scraping" && /competitor|market|scraped|collected|source/i.test(output)) { score += 0.5; }
+  if (category === "text-generation" && /headline|CTA|copy|variant|tone/i.test(output)) { score += 0.5; }
+  if (category === "image-generation" && /asset|resolution|style|export|mockup/i.test(output)) { score += 0.5; }
+  if (category === "data-processing" && /segment|analysis|model|pricing|strategy/i.test(output)) { score += 0.5; }
+  if (category === "code-analysis" && /review|score|check|validated|pass/i.test(output)) { score += 0.5; }
+  if (category === "deployment" && /deployed|live|URL|SSL|edge/i.test(output)) { score += 0.5; }
+
+  // Cap at 10
+  score = Math.min(10, Math.round(score * 10) / 10);
+
+  return { score, feedback: feedback.join(". ") + "." };
+}
+
+// Cost tracking state for the pipeline run
+interface CostTracker {
+  stages: { stageId: string; stageName: string; provider: string; cost: number; timestamp: string }[];
+  runningTotal: number;
+  retrySpend: number;
+  qualityRerunSpend: number;
+}
+
+// Attempt to execute a single stage with a given provider. Returns the output string or throws.
+async function executeStageWork(
+  stage: ProjectStage,
+  task: string,
+  providerName: string,
+  latencyMs: number,
+  category: string,
+): Promise<string> {
+  if (category === "domain") {
+    const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
+    const domainResults = await searchDomains(projectName.toLowerCase());
+    const available = domainResults.filter(r => r.available);
+    const taken = domainResults.filter(r => !r.available);
+    return `Domain search for "${projectName}" completed via RDAP:\n` +
+      `Available: ${available.map(d => `${d.domain} ($${d.price}/yr)`).join(", ") || "none found"}\n` +
+      `Taken: ${taken.map(d => d.domain).join(", ") || "none"}\n` +
+      `Checked ${domainResults.length} TLDs in real-time. ${available.length > 0 ? `Recommended: ${available[0].domain} at $${available[0].price}/yr` : "Consider different naming."}`;
+  }
+
+  if (category === "deployment") {
+    const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
+    const site = generateLandingPage(
+      projectName,
+      "The Future Starts Here",
+      "A next-generation product built with AI-powered autonomous execution.",
+      ["Lightning fast: Sub-50ms response times globally", "Secure by default: Enterprise-grade security built in", "Scale infinitely: From 0 to millions with zero config"],
+      "Get Started",
+    );
+    const larpResult = deployToLarpClick(site, projectName);
+    const vercelResult = await deployToVercel(site, projectName);
+
+    let output = `Site deployed and live.\n` +
+      `Local URL: ${larpResult.url} (accessible now)\n` +
+      `Subdomain: ${larpResult.subdomain}.larp.click\n` +
+      `Status: ${larpResult.status}\n`;
+    if (vercelResult.success && vercelResult.method === "vercel-api") {
+      output += `Vercel URL: ${vercelResult.url}\n`;
+    }
+    output += `Generated landing page with hero section, feature grid, and CTA. Dark theme, responsive.\n` +
+      `The site is live and viewable at the URL above.`;
+    return output;
+  }
+
+  // Simulated execution for other categories
+  await delay(Math.min(latencyMs / 5, 1500));
+  const outputs = STAGE_OUTPUTS[category] || STAGE_OUTPUTS["text-generation"];
+  return outputs[Math.floor(Math.random() * outputs.length)];
+}
+
+// Main pipeline — with retry, cost tracking, quality gates, and timing
 export async function executePipeline(
   task: string,
   config: PipelineConfig,
@@ -230,6 +328,9 @@ export async function executePipeline(
   const results: ExecutionResult[] = [];
   const wallet = initializeWallets(parseFloat(process.env.DEMO_WALLET_BALANCE || "10.00"));
   initGovernance();
+
+  const pipelineStartTime = Date.now();
+  const costTracker: CostTracker = { stages: [], runningTotal: 0, retrySpend: 0, qualityRerunSpend: 0 };
 
   emit(onEvent, "system", {
     message: "AgentPM initialized. Planning project stages.",
@@ -252,9 +353,10 @@ export async function executePipeline(
 
   await delay(300);
 
-  // Execute each stage
+  // Execute each stage with retry + quality gate
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
+    const stageStartTime = Date.now();
 
     // Discover providers
     emit(onEvent, "discovery", {
@@ -273,7 +375,7 @@ export async function executePipeline(
       continue;
     }
 
-    // Evaluate
+    // Evaluate — show all providers
     emit(onEvent, "evaluation", {
       message: `${scored.length} providers available`,
       stageId: stage.id,
@@ -287,153 +389,206 @@ export async function executePipeline(
     });
     await delay(300);
 
-    // Pick best affordable
+    // Retry loop: try providers in ranked order
     const affordable = scored.filter(s => s.provider.price <= wallet.balance);
     if (affordable.length === 0) {
-      emit(onEvent, "error", { message: `Insufficient balance for ${stage.name}`, stageId: stage.id });
-      continue;
-    }
-    const chosen = affordable[0];
-
-    emit(onEvent, "decision", {
-      message: `Selected ${chosen.provider.name} ($${chosen.provider.price.toFixed(3)}/call, quality ${chosen.provider.qualityScore}/10)`,
-      stageId: stage.id,
-      provider: chosen.provider.name,
-      price: chosen.provider.price,
-      quality: chosen.provider.qualityScore,
-      score: chosen.score,
-    });
-    await delay(200);
-
-    // Governance check
-    const gov = govCheck(chosen.provider.price, stage.toolCategory, chosen.provider.network, chosen.provider.name);
-    emit(onEvent, "governance", {
-      message: gov.allowed ? "Policy check passed" : `Policy denied: ${gov.violations[0]?.message}`,
-      allowed: gov.allowed,
-      stageId: stage.id,
-    });
-
-    if (!gov.allowed) {
-      emit(onEvent, "error", { message: `Governance blocked payment for ${stage.name}`, stageId: stage.id });
-      continue;
-    }
-    if (gov.allowed) govRecord(chosen.provider.price);
-    await delay(200);
-
-    // x402 Payment
-    emit(onEvent, "payment", {
-      message: `Paying ${chosen.provider.name}`,
-      phase: "signing",
-      amount: chosen.provider.price,
-      from: wallet.address,
-      to: chosen.provider.walletAddress,
-      stageId: stage.id,
-    });
-    await delay(150);
-
-    const x402 = executeX402Payment(wallet.address, chosen.provider.walletAddress, chosen.provider.price, `${stage.name}: ${chosen.provider.name}`, chosen.provider.network);
-    const payResult = processPayment(wallet.id, chosen.provider.walletAddress, chosen.provider.price, chosen.provider.name, chosen.provider.network);
-
-    if (!payResult.success) {
-      emit(onEvent, "error", { message: `Payment failed: ${payResult.error}`, stageId: stage.id });
+      emit(onEvent, "error", { message: `Insufficient balance for ${stage.name}. Need $${scored[0].provider.price.toFixed(3)} but only $${wallet.balance.toFixed(4)} remaining.`, stageId: stage.id });
       continue;
     }
 
-    emit(onEvent, "payment", {
-      message: `Settled on ${chosen.provider.network}`,
-      phase: "settled",
-      txHash: x402.settlement.txHash,
-      amount: chosen.provider.price,
-      newBalance: wallet.balance,
-      stageId: stage.id,
-    });
-    await delay(200);
+    let stageSuccess = false;
+    let attemptIndex = 0;
+    const maxAttempts = Math.min(affordable.length, MAX_RETRIES + 1);
 
-    // Execute (real calls for domain/deploy, simulated for others)
-    emit(onEvent, "execution", {
-      message: `${chosen.provider.name} executing ${stage.action.toLowerCase()}...`,
-      stageId: stage.id,
-    });
+    while (attemptIndex < maxAttempts && !stageSuccess) {
+      const chosen = affordable[attemptIndex];
+      const isRetry = attemptIndex > 0;
 
-    let output: string;
-
-    if (stage.toolCategory === "domain") {
-      // REAL domain check via RDAP
-      try {
-        const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
-        const results = await searchDomains(projectName.toLowerCase());
-        const available = results.filter(r => r.available);
-        const taken = results.filter(r => !r.available);
-        output = `Domain search for "${projectName}" completed via RDAP:\n` +
-          `Available: ${available.map(d => `${d.domain} ($${d.price}/yr)`).join(", ") || "none found"}\n` +
-          `Taken: ${taken.map(d => d.domain).join(", ") || "none"}\n` +
-          `Checked ${results.length} TLDs in real-time. ${available.length > 0 ? `Recommended: ${available[0].domain} at $${available[0].price}/yr` : "Consider different naming."}`;
-      } catch {
-        output = STAGE_OUTPUTS["domain"][0];
+      if (isRetry) {
+        emit(onEvent, "retry", {
+          message: `Retrying with fallback provider ${chosen.provider.name} (attempt ${attemptIndex + 1}/${maxAttempts})`,
+          stageId: stage.id,
+          attempt: attemptIndex + 1,
+          maxAttempts,
+          provider: chosen.provider.name,
+          reason: "Previous provider failed or quality too low",
+        });
+        await delay(200);
       }
-    } else if (stage.toolCategory === "deployment") {
-      // Deploy to larp.click (real, accessible right now)
-      try {
-        const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
-        const site = generateLandingPage(
-          projectName,
-          "The Future Starts Here",
-          "A next-generation product built with AI-powered autonomous execution.",
-          ["Lightning fast: Sub-50ms response times globally", "Secure by default: Enterprise-grade security built in", "Scale infinitely: From 0 to millions with zero config"],
-          "Get Started",
-        );
 
-        // Deploy to larp.click first (always works, instant)
-        const larpResult = deployToLarpClick(site, projectName);
+      emit(onEvent, "decision", {
+        message: `${isRetry ? "Fallback: " : "Selected "}${chosen.provider.name} ($${chosen.provider.price.toFixed(3)}/call, quality ${chosen.provider.qualityScore}/10)`,
+        stageId: stage.id,
+        provider: chosen.provider.name,
+        price: chosen.provider.price,
+        quality: chosen.provider.qualityScore,
+        score: chosen.score,
+        isRetry,
+        attempt: attemptIndex + 1,
+      });
+      await delay(200);
 
-        // Also try Vercel if token available
-        const vercelResult = await deployToVercel(site, projectName);
+      // Governance check
+      const gov = govCheck(chosen.provider.price, stage.toolCategory, chosen.provider.network, chosen.provider.name);
+      emit(onEvent, "governance", {
+        message: gov.allowed ? "Policy check passed" : `Policy denied: ${gov.violations[0]?.message}`,
+        allowed: gov.allowed,
+        stageId: stage.id,
+      });
 
-        output = `Site deployed and live.\n` +
-          `Local URL: ${larpResult.url} (accessible now)\n` +
-          `Subdomain: ${larpResult.subdomain}.larp.click\n` +
-          `Status: ${larpResult.status}\n`;
-
-        if (vercelResult.success && vercelResult.method === "vercel-api") {
-          output += `Vercel URL: ${vercelResult.url}\n`;
-        }
-
-        output += `Generated landing page with hero section, feature grid, and CTA. Dark theme, responsive.\n` +
-          `The site is live and viewable at the URL above.`;
-      } catch {
-        output = STAGE_OUTPUTS["deployment"][0];
+      if (!gov.allowed) {
+        emit(onEvent, "error", { message: `Governance blocked ${chosen.provider.name} — trying next provider`, stageId: stage.id });
+        attemptIndex++;
+        continue;
       }
-    } else {
-      await delay(Math.min(chosen.provider.latencyMs / 5, 1500));
-      const outputs = STAGE_OUTPUTS[stage.toolCategory] || STAGE_OUTPUTS["text-generation"];
-      output = outputs[Math.floor(Math.random() * outputs.length)];
+      govRecord(chosen.provider.price);
+      await delay(200);
+
+      // x402 Payment
+      emit(onEvent, "payment", {
+        message: `Paying ${chosen.provider.name}`,
+        phase: "signing",
+        amount: chosen.provider.price,
+        from: wallet.address,
+        to: chosen.provider.walletAddress,
+        stageId: stage.id,
+      });
+      await delay(150);
+
+      const x402 = executeX402Payment(wallet.address, chosen.provider.walletAddress, chosen.provider.price, `${stage.name}: ${chosen.provider.name}`, chosen.provider.network);
+      const payResult = processPayment(wallet.id, chosen.provider.walletAddress, chosen.provider.price, chosen.provider.name, chosen.provider.network);
+
+      if (!payResult.success) {
+        emit(onEvent, "error", { message: `Payment failed for ${chosen.provider.name}: ${payResult.error}. Trying fallback.`, stageId: stage.id });
+        attemptIndex++;
+        continue;
+      }
+
+      emit(onEvent, "payment", {
+        message: `Settled on ${chosen.provider.network}`,
+        phase: "settled",
+        txHash: x402.settlement.txHash,
+        amount: chosen.provider.price,
+        newBalance: wallet.balance,
+        stageId: stage.id,
+      });
+      await delay(200);
+
+      // Track cost immediately
+      costTracker.stages.push({
+        stageId: stage.id,
+        stageName: stage.name,
+        provider: chosen.provider.name,
+        cost: chosen.provider.price,
+        timestamp: new Date().toISOString(),
+      });
+      costTracker.runningTotal += chosen.provider.price;
+      if (isRetry) costTracker.retrySpend += chosen.provider.price;
+
+      // Emit cost update
+      emit(onEvent, "cost_update", {
+        message: `Running total: $${costTracker.runningTotal.toFixed(4)}`,
+        stageId: stage.id,
+        stageCost: chosen.provider.price,
+        runningTotal: costTracker.runningTotal,
+        retrySpend: costTracker.retrySpend,
+        qualityRerunSpend: costTracker.qualityRerunSpend,
+        remainingBudget: wallet.balance,
+      });
+
+      // Execute
+      emit(onEvent, "execution", {
+        message: `${chosen.provider.name} executing ${stage.action.toLowerCase()}...`,
+        stageId: stage.id,
+      });
+
+      let output: string;
+      const execStartTime = Date.now();
+      try {
+        output = await executeStageWork(stage, task, chosen.provider.name, chosen.provider.latencyMs, stage.toolCategory);
+      } catch (execErr) {
+        const errMsg = execErr instanceof Error ? execErr.message : "Unknown execution error";
+        emit(onEvent, "error", { message: `${chosen.provider.name} execution failed: ${errMsg}. Trying fallback.`, stageId: stage.id });
+        attemptIndex++;
+        continue;
+      }
+      const execDurationMs = Date.now() - execStartTime;
+
+      // Quality gate — evaluate output quality
+      const quality = evaluateQuality(output, stage.name, stage.toolCategory);
+      emit(onEvent, "quality_gate", {
+        message: quality.score >= QUALITY_THRESHOLD
+          ? `Quality gate PASSED (${quality.score}/10)`
+          : `Quality gate FAILED (${quality.score}/10, threshold: ${QUALITY_THRESHOLD})`,
+        stageId: stage.id,
+        score: quality.score,
+        threshold: QUALITY_THRESHOLD,
+        passed: quality.score >= QUALITY_THRESHOLD,
+        feedback: quality.feedback,
+        provider: chosen.provider.name,
+      });
+      await delay(150);
+
+      // If quality is below threshold and we have budget + retries left, re-run with next provider
+      if (quality.score < QUALITY_THRESHOLD && attemptIndex < maxAttempts - 1) {
+        emit(onEvent, "retry", {
+          message: `Quality score ${quality.score}/10 below threshold ${QUALITY_THRESHOLD}. Escalating to higher-quality provider.`,
+          stageId: stage.id,
+          reason: "quality_below_threshold",
+          qualityScore: quality.score,
+          feedback: quality.feedback,
+        });
+        costTracker.qualityRerunSpend += chosen.provider.price;
+        attemptIndex++;
+        continue;
+      }
+
+      // Stage succeeded
+      const stageDurationMs = Date.now() - stageStartTime;
+
+      results.push({
+        stepId: stage.id,
+        provider: chosen.provider,
+        output,
+        cost: chosen.provider.price,
+        latencyMs: chosen.provider.latencyMs,
+        payment: x402.settlement,
+        success: true,
+      });
+
+      emit(onEvent, "result", {
+        message: `${stage.name} complete`,
+        stageId: stage.id,
+        stageName: stage.name,
+        provider: chosen.provider.name,
+        output,
+        cost: chosen.provider.price,
+        latencyMs: chosen.provider.latencyMs,
+        executionTimeMs: execDurationMs,
+        totalStageTimeMs: stageDurationMs,
+        qualityScore: quality.score,
+        qualityFeedback: quality.feedback,
+        txHash: x402.settlement.txHash,
+        stageIndex: i,
+        stageTotal: stages.length,
+        runningTotal: costTracker.runningTotal,
+        attempts: attemptIndex + 1,
+      });
+      await delay(200);
+
+      stageSuccess = true;
     }
 
-    results.push({
-      stepId: stage.id,
-      provider: chosen.provider,
-      output,
-      cost: chosen.provider.price,
-      latencyMs: chosen.provider.latencyMs,
-      payment: x402.settlement,
-      success: true,
-    });
-
-    emit(onEvent, "result", {
-      message: `${stage.name} complete`,
-      stageId: stage.id,
-      stageName: stage.name,
-      provider: chosen.provider.name,
-      output,
-      cost: chosen.provider.price,
-      latencyMs: chosen.provider.latencyMs,
-      txHash: x402.settlement.txHash,
-      stageIndex: i,
-      stageTotal: stages.length,
-    });
-    await delay(200);
+    if (!stageSuccess) {
+      emit(onEvent, "error", {
+        message: `Stage "${stage.name}" failed after ${maxAttempts} attempt(s). All providers exhausted or blocked.`,
+        stageId: stage.id,
+        attempts: maxAttempts,
+      });
+    }
   }
 
+  const pipelineDurationMs = Date.now() - pipelineStartTime;
   const { wallet: finalWallet, transactions, totalSpent } = getWalletState();
 
   emit(onEvent, "complete", {
@@ -441,6 +596,14 @@ export async function executePipeline(
     totalCost: totalSpent,
     totalSteps: results.length,
     walletBalance: finalWallet?.balance ?? 0,
+    pipelineDurationMs,
+    avgStageTimeMs: results.length > 0 ? Math.round(pipelineDurationMs / results.length) : 0,
+    costBreakdown: {
+      totalSpent: costTracker.runningTotal,
+      retrySpend: costTracker.retrySpend,
+      qualityRerunSpend: costTracker.qualityRerunSpend,
+      perStage: costTracker.stages,
+    },
     stages: results.map(r => ({ name: r.stepId, provider: r.provider.name, cost: r.cost })),
     transactions: transactions.slice(0, 10).map(tx => ({ toolName: tx.toolName, amount: tx.amount, txHash: tx.txHash, status: tx.status })),
   });
