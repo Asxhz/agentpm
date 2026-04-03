@@ -13,7 +13,9 @@ export type ToolCategory =
   | "data-processing"
   | "web-scraping"
   | "audio-generation"
-  | "video-generation";
+  | "video-generation"
+  | "deployment"
+  | "domain";
 
 export interface ToolProvider {
   id: string;
@@ -171,11 +173,15 @@ export type StreamEventType =
   | "discovery"
   | "evaluation"
   | "decision"
+  | "governance"
   | "payment"
   | "execution"
   | "result"
   | "error"
-  | "complete";
+  | "complete"
+  | "retry"
+  | "quality_gate"
+  | "cost_update";
 
 export interface StreamEvent {
   type: StreamEventType;

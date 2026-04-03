@@ -16,7 +16,6 @@ import {
 import {
   getProvidersByCategory,
   getCategoryForTask,
-  TOOL_PROVIDERS,
 } from "./marketplace";
 
 const anthropic = new Anthropic();
@@ -201,7 +200,7 @@ In 1-2 sentences, explain why this is the best choice. Be specific about the tra
 
 function analyzeTaskFallback(
   task: string,
-  config: PipelineConfig
+  _config: PipelineConfig
 ): TaskAnalysis {
   const categories = getCategoryForTask(task);
   const steps: TaskStep[] = categories.map((cat, i) => ({
