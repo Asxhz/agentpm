@@ -1,0 +1,16 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "functions": {
+    "src/app/api/chat/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/agent/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/multiagent/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
