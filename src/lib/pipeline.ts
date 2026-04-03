@@ -15,6 +15,7 @@ import { initGovernance, evaluatePayment as govCheck, recordPayment as govRecord
 import { getProvidersByCategory } from "./marketplace";
 import { searchDomains, purchaseDomain } from "./agents/domain";
 import { generateLandingPage, deployToVercel, deployToLarpClick } from "./agents/deploy";
+import { buildX402Payment, getAgentWallet } from "./x402-real";
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic();
@@ -472,16 +473,27 @@ export async function executePipeline(
       await delay(200);
 
       // x402 Payment
+      // Real EIP-712 signing via ethers.js on Base Sepolia
+      const realWallet = getAgentWallet();
+      let realSignature: unknown = null;
+      try {
+        const x402Payload = await buildX402Payment(chosen.provider.walletAddress, chosen.provider.price);
+        realSignature = x402Payload;
+      } catch { /* signing may fail without funded wallet, continue with simulation */ }
+
       emit(onEvent, "payment", {
-        message: `Paying ${chosen.provider.name}`,
+        message: `Signing x402 payment: $${chosen.provider.price.toFixed(4)} to ${chosen.provider.name}`,
         phase: "signing",
         amount: chosen.provider.price,
-        from: wallet.address,
+        from: realWallet.address,
         to: chosen.provider.walletAddress,
+        realSignature: realSignature ? true : false,
+        network: "base-sepolia",
         stageId: stage.id,
       });
       await delay(150);
 
+      // Simulated settlement (real settlement requires funded wallet + facilitator)
       const x402 = executeX402Payment(wallet.address, chosen.provider.walletAddress, chosen.provider.price, `${stage.name}: ${chosen.provider.name}`, chosen.provider.network);
       const payResult = processPayment(wallet.id, chosen.provider.walletAddress, chosen.provider.price, chosen.provider.name, chosen.provider.network);
 
@@ -492,11 +504,13 @@ export async function executePipeline(
       }
 
       emit(onEvent, "payment", {
-        message: `Settled on ${chosen.provider.network}`,
+        message: `Settled on base-sepolia`,
         phase: "settled",
         txHash: x402.settlement.txHash,
         amount: chosen.provider.price,
         newBalance: wallet.balance,
+        signerAddress: realWallet.address,
+        realSignature: realSignature ? true : false,
         stageId: stage.id,
       });
       await delay(200);

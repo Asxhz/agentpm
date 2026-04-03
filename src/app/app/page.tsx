@@ -78,6 +78,7 @@ export default function AppPage() {
   const [vercelToken, setVercelToken] = useState("");
   const [customDomain, setCustomDomain] = useState("");
   const [deployedSites, setDeployedSites] = useState<{ subdomain: string; url: string; projectName: string }[]>([]);
+  const [onchain, setOnchain] = useState<{ address: string; ethBalance: string; usdcBalance: string; network: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -89,6 +90,9 @@ export default function AppPage() {
   }, []);
 
   useEffect(() => { refreshWallet(); }, [refreshWallet]);
+  useEffect(() => {
+    fetch("/api/x402").then(r => r.json()).then(setOnchain).catch(() => {});
+  }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, liveStages]);
 
   const resetAll = useCallback(async () => {
@@ -271,6 +275,18 @@ export default function AppPage() {
                       <span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">{wallet.txCount}</span>
                     </div>
                   </div>
+                  {onchain && (
+                    <div>
+                      <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">On-Chain (Base Sepolia)</span>
+                      <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
+                        <div className="flex justify-between"><span className="text-text-muted">address</span><span className="truncate ml-2 max-w-[100px]">{onchain.address.slice(0, 6)}...{onchain.address.slice(-4)}</span></div>
+                        <div className="flex justify-between"><span className="text-text-muted">ETH</span><span>{parseFloat(onchain.ethBalance).toFixed(4)}</span></div>
+                        <div className="flex justify-between"><span className="text-text-muted">USDC</span><span>{parseFloat(onchain.usdcBalance).toFixed(4)}</span></div>
+                        <a href={`https://sepolia.basescan.org/address/${onchain.address}`} target="_blank" rel="noopener noreferrer"
+                          className="text-[8px] text-accent hover:underline block mt-1">View on BaseScan</a>
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Policy Limits</span>
                     <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
