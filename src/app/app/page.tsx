@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
@@ -259,7 +260,7 @@ export default function App() {
                             <div className="flex-1 min-w-0 space-y-3">
                               {m.content && (
                                 <div className="text-[13px] text-[#999] leading-[1.75] [&_strong]:text-[#ededed] [&_strong]:font-medium [&_table]:w-full [&_table]:text-[10px] [&_table]:font-[family-name:var(--font-mono)] [&_table]:my-3 [&_th]:text-left [&_th]:px-2 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-[#1f1f1f] [&_th]:text-[#666] [&_th]:font-medium [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-[#141414] [&_ul]:space-y-1 [&_ol]:space-y-1 [&_li]:text-[#999] [&_code]:bg-[#141414] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-[family-name:var(--font-mono)] [&_h2]:text-sm [&_h2]:font-medium [&_h2]:text-[#ededed] [&_h2]:mt-4 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-[#ededed] [&_h3]:mt-3 [&_h3]:mb-1 [&_p]:mb-2">
-                                  <ReactMarkdown>{m.content}</ReactMarkdown>
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                                   {m.streaming && <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="text-[#666]">|</motion.span>}
                                 </div>
                               )}
