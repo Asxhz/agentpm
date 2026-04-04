@@ -156,6 +156,7 @@ export async function deployToLarpClick(
       body: JSON.stringify({
         name: subdomain,
         files: fileUploads,
+        target: "production",
         projectSettings: { framework: null },
       }),
     });
