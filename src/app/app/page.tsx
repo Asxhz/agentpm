@@ -7,7 +7,6 @@ import ReactMarkdown from "react-markdown";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
-import { Wallet, Activity, Settings, ChevronRight, Send, Copy, Check, ExternalLink, Globe, Zap, LayoutDashboard } from "lucide-react";
 
 const USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 const USDC_ABI = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
@@ -17,21 +16,13 @@ interface StageResult { stageId: string; stageName: string; stageDescription?: s
 interface WalletInfo { balance: number; address: string; totalSpent: number; txCount: number }
 interface TxInfo { toolName: string; amount: number; txHash: string; status: string }
 
-const PROMPTS = [
-  { label: "Build a landing page", desc: "Generate and deploy a complete site", icon: Globe },
-  { label: "Run a security audit", desc: "Analyze code for vulnerabilities", icon: Zap },
-  { label: "Research competitors", desc: "Scrape and analyze market data", icon: Activity },
-  { label: "Create marketing assets", desc: "Copy, visuals, and strategy", icon: LayoutDashboard },
-];
-
 function CopyBtn({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/5">
-      {copied ? <Check size={12} className="text-accent" /> : <Copy size={12} className="text-text-muted" />}
-    </button>
-  );
+  const [ok, setOk] = useState(false);
+  return <button onClick={() => { navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1200); }}
+    className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 p-1 rounded hover:bg-surface-2 transition-all text-text-muted hover:text-text">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+    {ok && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[8px] text-accent">copied</span>}
+  </button>;
 }
 
 export default function AppPage() {
@@ -43,13 +34,13 @@ export default function AppPage() {
   const [liveStages, setLiveStages] = useState<StageResult[]>([]);
   const [budget, setBudget] = useState(5);
   const [priority, setPriority] = useState("balanced");
-  const [sidebarTab, setSidebarTab] = useState<"wallet" | "activity" | "config">("wallet");
+  const [sidebarTab, setSidebarTab] = useState<"wallet" | "txns" | "config">("wallet");
   const [allTxns, setAllTxns] = useState<TxInfo[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deployedSites, setDeployedSites] = useState<{ subdomain: string; url: string; projectName: string }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { address, isConnected } = useAccount();
 
+  const { address, isConnected } = useAccount();
   const { data: usdcRaw } = useReadContract({
     address: USDC_ADDRESS, abi: USDC_ABI, functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -77,37 +68,23 @@ export default function AppPage() {
     if (!text || isLoading) return;
     setMessages(prev => [...prev, { id: Date.now().toString(), role: "user", content: text, timestamp: new Date().toISOString() }]);
     setInput(""); setIsLoading(true); setLiveStages([]);
-
-    const assistantId = (Date.now() + 1).toString();
-    let assistantContent = "";
-    let stages: StageResult[] = [];
-    let summary: Record<string, unknown> | undefined;
-
-    setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "", timestamp: new Date().toISOString(), isStreaming: true }]);
-
+    const aId = (Date.now() + 1).toString();
+    let ac = ""; let stages: StageResult[] = []; let summary: Record<string, unknown> | undefined;
+    setMessages(prev => [...prev, { id: aId, role: "assistant", content: "", timestamp: new Date().toISOString(), isStreaming: true }]);
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, sessionId, budget, priority }) });
-      const reader = res.body?.getReader();
-      if (!reader) return;
+      const reader = res.body?.getReader(); if (!reader) return;
       const dec = new TextDecoder(); let buf = "";
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split("\n"); buf = lines.pop() || "";
+        const { done, value } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); const lines = buf.split("\n"); buf = lines.pop() || "";
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.slice(6).trim();
-          if (raw === "[DONE]") continue;
+          if (!line.startsWith("data: ")) continue; const raw = line.slice(6).trim(); if (raw === "[DONE]") continue;
           try {
             const ev = JSON.parse(raw) as { type: string; data: Record<string, unknown> };
-            if (ev.type === "text_delta") {
-              assistantContent += ev.data.text as string;
-              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: assistantContent } : m));
-            }
+            if (ev.type === "text_delta") { ac += ev.data.text as string; setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: ac } : m)); }
             if (ev.type === "stage_event") {
-              const se = ev.data as Record<string, unknown>;
-              const sd = se.data as Record<string, unknown>;
+              const se = ev.data as Record<string, unknown>; const sd = se.data as Record<string, unknown>;
               if (se.type === "discovery") { stages = [...stages, { stageId: sd.stageId as string, stageName: sd.stageName as string, stageDescription: sd.stageDescription as string, stageIndex: sd.stageIndex as number, stageTotal: sd.stageTotal as number, status: "running" }]; setLiveStages([...stages]); }
               if (se.type === "evaluation") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, providers: sd.providers as StageResult["providers"] } : s); setLiveStages([...stages]); }
               if (se.type === "governance") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, governancePassed: sd.allowed as boolean } : s); setLiveStages([...stages]); }
@@ -119,123 +96,128 @@ export default function AppPage() {
           } catch { /* skip */ }
         }
       }
-    } catch (err) { assistantContent = `Error: ${err instanceof Error ? err.message : "Connection failed"}`; }
-
-    setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: assistantContent.replace(/\[EXECUTE:[^\]]*\]/, "").trim(), stages: stages.length > 0 ? stages : undefined, summary, isStreaming: false } : m));
+    } catch (err) { ac = `Error: ${err instanceof Error ? err.message : "Connection failed"}`; }
+    setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: ac.replace(/\[EXECUTE:[^\]]*\]/, "").trim(), stages: stages.length > 0 ? stages : undefined, summary, isStreaming: false } : m));
     setLiveStages([]); setIsLoading(false); refreshWallet(); inputRef.current?.focus();
   }, [input, isLoading, sessionId, budget, priority, refreshWallet]);
 
-  const budgetUsed = wallet ? ((wallet.totalSpent / (wallet.totalSpent + wallet.balance)) * 100) : 0;
+  const budgetPct = wallet ? Math.min((wallet.totalSpent / (wallet.totalSpent + wallet.balance)) * 100, 100) : 0;
 
   return (
-    <div className="h-screen flex overflow-hidden bg-bg">
-      {/* SIDEBAR */}
-      <motion.aside initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1, width: sidebarOpen ? 260 : 56 }}
-        className="shrink-0 border-r border-border flex flex-col overflow-hidden transition-all duration-300">
-        {/* Logo */}
-        <div className="h-14 px-4 flex items-center gap-2.5 border-b border-border shrink-0">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-purple to-blue flex items-center justify-center shrink-0">
-              <span className="text-[9px] font-bold text-white">PM</span>
-            </div>
-            {sidebarOpen && <span className="text-sm font-semibold tracking-tight">AgentPM</span>}
+    <div className="h-screen flex flex-col bg-bg">
+      {/* HEADER */}
+      <motion.header initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="shrink-0 h-11 px-4 flex items-center justify-between border-b border-border bg-bg/80 backdrop-blur-lg z-50">
+        <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="url(#logo-grad)" />
+              <path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              <defs><linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs>
+            </svg>
+            <span className="text-xs font-semibold tracking-tight">AgentPM</span>
           </Link>
-          {sidebarOpen && <button onClick={() => setSidebarOpen(false)} className="ml-auto text-text-muted hover:text-text p-1"><ChevronRight size={14} /></button>}
-          {!sidebarOpen && <button onClick={() => setSidebarOpen(true)} className="text-text-muted hover:text-text p-1"><ChevronRight size={14} className="rotate-180" /></button>}
+          <span className="text-[9px] text-text-muted font-[family-name:var(--font-mono)]">{sessionId.slice(0, 6)}</span>
         </div>
-
-        {/* Nav tabs */}
-        <div className="flex border-b border-border shrink-0">
-          {([["wallet", Wallet], ["activity", Activity], ["config", Settings]] as const).map(([id, Icon]) => (
-            <button key={id} onClick={() => setSidebarTab(id as typeof sidebarTab)}
-              className={`flex-1 py-2.5 flex items-center justify-center transition-colors ${sidebarTab === id ? "text-text bg-white/[0.03]" : "text-text-muted hover:text-text-dim"}`}>
-              <Icon size={14} />
-            </button>
-          ))}
+        <div className="flex items-center gap-4 text-[9px] font-[family-name:var(--font-mono)]">
+          {isLoading && <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} className="text-accent flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-accent" />running</motion.span>}
+          <span className="text-text-muted">x402 / base-sepolia</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
         </div>
+      </motion.header>
 
-        {/* Sidebar content */}
-        <div className="flex-1 overflow-y-auto">
-          {sidebarTab === "wallet" && sidebarOpen && (
-            <div className="p-4 space-y-4 animate-fade-up">
+      <div className="flex-1 flex overflow-hidden">
+        {/* SIDEBAR */}
+        <aside className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+          <div className="flex border-b border-border">
+            {(["wallet", "txns", "config"] as const).map(t => (
+              <button key={t} onClick={() => setSidebarTab(t)}
+                className={`flex-1 py-2 text-[9px] font-medium uppercase tracking-wider transition-colors ${sidebarTab === t ? "text-text border-b border-text" : "text-text-muted hover:text-text-dim"}`}>
+                {t === "wallet" ? "Wallet" : t === "txns" ? `Activity` : "Config"}
+              </button>
+            ))}
+          </div>
+
+          {sidebarTab === "wallet" && (
+            <div className="p-3 space-y-3 flex-1 overflow-y-auto">
               {/* Wallet Connect */}
-              <div className="[&_button]:!rounded-lg [&_button]:!text-[10px] [&_button]:!h-8 [&_button]:!font-medium">
+              <div className="[&_button]:!rounded-lg [&_button]:!text-[10px] [&_button]:!h-8">
                 <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
               </div>
 
               {isConnected && (
-                <div className="rounded-xl glass p-3.5">
-                  <div className="text-[9px] font-medium uppercase tracking-widest text-text-muted mb-1">On-Chain Balance</div>
-                  <div className="text-2xl font-bold font-[family-name:var(--font-mono)] tabular-nums">${usdcBalance.toFixed(2)}</div>
-                  <div className="text-[9px] text-text-muted mt-0.5">USDC on Base Sepolia</div>
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="bg-surface rounded-lg p-3 border border-border">
+                  <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1">On-Chain (Base Sepolia)</span>
+                  <span className="text-xl font-semibold font-[family-name:var(--font-mono)] tabular-nums">${usdcBalance.toFixed(2)}</span>
+                  <span className="text-[9px] text-text-muted ml-1">USDC</span>
+                  <a href={`https://sepolia.basescan.org/address/${address}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[8px] text-accent hover:underline block mt-1 font-[family-name:var(--font-mono)]">View on BaseScan</a>
                   {usdcBalance === 0 && (
-                    <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center gap-1 text-[9px] text-accent hover:underline"><ExternalLink size={9} />Get testnet USDC</a>
+                    <div className="mt-2 pt-2 border-t border-border space-y-0.5">
+                      <span className="text-[8px] text-amber block">Need testnet funds?</span>
+                      <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="text-[8px] text-accent hover:underline block">Get USDC</a>
+                      <a href="https://portal.cdp.coinbase.com/products/faucet" target="_blank" rel="noopener noreferrer" className="text-[8px] text-accent hover:underline block">Get ETH</a>
+                    </div>
                   )}
-                </div>
+                </motion.div>
               )}
 
-              {/* Session Budget */}
               {wallet && (
-                <div className="space-y-3">
-                  <div className="rounded-xl glass p-3.5">
-                    <div className="text-[9px] font-medium uppercase tracking-widest text-text-muted mb-2">Session Budget</div>
+                <>
+                  <div className="bg-surface rounded-lg p-3 border border-border">
+                    <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Session Budget</span>
                     <div className="flex items-baseline justify-between mb-2">
-                      <span className="text-lg font-bold font-[family-name:var(--font-mono)] tabular-nums">${wallet.balance.toFixed(2)}</span>
-                      <span className="text-[9px] text-text-muted">${wallet.totalSpent.toFixed(3)} spent</span>
+                      <span className="text-lg font-semibold font-[family-name:var(--font-mono)] tabular-nums">${wallet.balance.toFixed(2)}</span>
+                      <span className="text-[8px] text-text-muted">${wallet.totalSpent.toFixed(3)} used</span>
                     </div>
-                    <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                      <motion.div className="h-full rounded-full bg-gradient-to-r from-accent to-blue" animate={{ width: `${budgetUsed}%` }} transition={{ duration: 0.5 }} />
+                    <div className="h-1 bg-surface-2 rounded-full overflow-hidden">
+                      <motion.div className="h-full bg-accent rounded-full" animate={{ width: `${budgetPct}%` }} transition={{ duration: 0.4 }} />
                     </div>
                   </div>
 
-                  {/* Controls */}
-                  <div className="rounded-xl glass p-3.5 space-y-3">
+                  <div className="bg-surface rounded-lg p-3 border border-border space-y-2">
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[9px] font-medium uppercase tracking-widest text-text-muted">Max Budget</span>
-                        <span className="text-[10px] font-[family-name:var(--font-mono)] tabular-nums">${budget}</span>
-                      </div>
+                      <div className="flex justify-between mb-1"><span className="text-[8px] uppercase tracking-widest text-text-dim">Budget Limit</span><span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums">${budget}</span></div>
                       <input type="range" min="1" max="10" step="0.5" value={budget} onChange={e => setBudget(parseFloat(e.target.value))}
-                        className="w-full h-1 bg-white/[0.04] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(255,255,255,0.2)]" />
+                        className="w-full h-px bg-border appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer" />
                     </div>
                     <div>
-                      <span className="text-[9px] font-medium uppercase tracking-widest text-text-muted block mb-1.5">Priority</span>
+                      <span className="text-[8px] uppercase tracking-widest text-text-dim block mb-1">Priority</span>
                       <div className="grid grid-cols-4 gap-1">
                         {(["cost","quality","speed","balanced"] as const).map(p => (
                           <button key={p} onClick={() => setPriority(p)}
-                            className={`text-[8px] py-1.5 rounded-lg font-medium transition-all capitalize ${
-                              priority === p ? "bg-white/10 text-text shadow-[0_0_12px_rgba(255,255,255,0.05)]" : "text-text-muted hover:text-text-dim hover:bg-white/[0.02]"
+                            className={`text-[7px] py-1 rounded font-[family-name:var(--font-mono)] transition-all capitalize ${
+                              priority === p ? "bg-surface-3 text-text" : "text-text-muted hover:text-text-dim"
                             }`}>{p}</button>
                         ))}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <Link href="/hosting" className="flex-1 text-center py-2 rounded-lg text-[9px] font-medium text-text-muted hover:text-text bg-white/[0.02] hover:bg-white/[0.04] transition-all border border-border">Hosting</Link>
-                    <button onClick={resetAll} className="flex-1 py-2 rounded-lg text-[9px] font-medium text-text-muted hover:text-text bg-white/[0.02] hover:bg-white/[0.04] transition-all border border-border">Reset</button>
+                  <div className="flex gap-1.5">
+                    <Link href="/hosting" className="flex-1 text-center py-1.5 rounded-lg text-[8px] text-text-muted hover:text-text bg-surface border border-border transition-colors">Hosting</Link>
+                    <button onClick={resetAll} className="flex-1 py-1.5 rounded-lg text-[8px] text-text-muted hover:text-text bg-surface border border-border transition-colors">Reset</button>
                   </div>
-                </div>
+                </>
               )}
             </div>
           )}
 
-          {sidebarTab === "activity" && sidebarOpen && (
-            <div className="p-4 animate-fade-up">
-              <div className="text-[9px] font-medium uppercase tracking-widest text-text-muted mb-3">Transactions ({allTxns.length})</div>
-              {allTxns.length === 0 ? <p className="text-[10px] text-text-muted">No transactions yet</p> : (
-                <div className="space-y-1.5">
+          {sidebarTab === "txns" && (
+            <div className="flex-1 overflow-y-auto p-3">
+              <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim">{allTxns.length} transactions</span>
+              {allTxns.length === 0 ? <p className="text-[9px] text-text-muted mt-3">No activity</p> : (
+                <div className="mt-2 space-y-1.5">
                   {allTxns.map((tx, i) => (
-                    <motion.div key={tx.txHash + i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                      className="rounded-lg glass p-2.5 group">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium truncate">{tx.toolName}</span>
-                        <span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums text-red">-${tx.amount.toFixed(4)}</span>
+                    <motion.div key={tx.txHash + i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
+                      className="bg-surface rounded-lg p-2 border border-border">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-medium truncate mr-1">{tx.toolName}</span>
+                        <span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums text-red shrink-0">-${tx.amount.toFixed(4)}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-1">
-                        <span className={`h-1.5 w-1.5 rounded-full ${tx.status === "confirmed" ? "bg-accent" : "bg-amber animate-pulse-glow"}`} />
-                        <span className="font-[family-name:var(--font-mono)] text-[7px] text-text-muted truncate">{tx.txHash.slice(0, 28)}...</span>
+                        <span className={`h-1 w-1 rounded-full ${tx.status === "confirmed" ? "bg-accent" : "bg-amber animate-pulse-dot"}`} />
+                        <span className="font-[family-name:var(--font-mono)] text-[7px] text-text-muted truncate">{tx.txHash.slice(0, 24)}...</span>
                       </div>
                     </motion.div>
                   ))}
@@ -244,159 +226,135 @@ export default function AppPage() {
             </div>
           )}
 
-          {sidebarTab === "config" && sidebarOpen && (
-            <div className="p-4 space-y-3 animate-fade-up">
-              <div className="rounded-xl glass p-3.5">
-                <div className="text-[9px] font-medium uppercase tracking-widest text-text-muted mb-2">Policy Limits</div>
-                <div className="space-y-2">
-                  {[["Per Transaction", "$0.50"], ["Daily Max", "$5.00"], ["Network", "Base Sepolia"]].map(([l, v]) => (
-                    <div key={l} className="flex justify-between items-center">
-                      <span className="text-[10px] text-text-dim">{l}</span>
-                      <span className="text-[9px] font-[family-name:var(--font-mono)] px-2 py-0.5 rounded-md bg-white/[0.04] text-text-secondary">{v}</span>
-                    </div>
-                  ))}
+          {sidebarTab === "config" && (
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              <div className="bg-surface rounded-lg p-3 border border-border">
+                <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Policy Limits</span>
+                <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
+                  <div className="flex justify-between"><span className="text-text-muted">per tx</span><span>$0.50</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">daily</span><span>$5.00</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">network</span><span>base-sepolia</span></div>
                 </div>
               </div>
-              <div className="rounded-xl glass p-3.5">
-                <div className="text-[9px] font-medium uppercase tracking-widest text-text-muted mb-2">Network</div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-accent animate-pulse-glow" />
-                  <span className="text-[10px] font-[family-name:var(--font-mono)]">base-sepolia / x402</span>
-                </div>
+              <div className="bg-surface rounded-lg p-3 border border-border">
+                <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Deployed Sites</span>
+                {deployedSites.length === 0 ? <p className="text-[8px] text-text-muted">No deployments yet</p> : (
+                  deployedSites.map(s => (
+                    <a key={s.subdomain} href={s.url} target="_blank" rel="noopener noreferrer" className="block text-[8px] text-accent hover:underline font-[family-name:var(--font-mono)]">{s.url}</a>
+                  ))
+                )}
+                <button onClick={() => fetch("/api/deploy").then(r => r.json()).then(d => setDeployedSites(d.sites || []))} className="text-[7px] text-text-muted hover:text-text-dim mt-1">refresh</button>
               </div>
             </div>
           )}
-        </div>
-      </motion.aside>
-
-      {/* MAIN */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* TOP BAR */}
-        <div className="h-14 px-5 flex items-center justify-between border-b border-border shrink-0 glass">
-          <div className="flex items-center gap-3 text-[10px] font-[family-name:var(--font-mono)] text-text-dim">
-            <span className="px-2 py-0.5 rounded-md bg-white/[0.04]">session {sessionId.slice(0, 6)}</span>
-            {isLoading && <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />running</motion.span>}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              <span className="text-[10px] font-[family-name:var(--font-mono)] text-text-dim">live</span>
-            </div>
-          </div>
-        </div>
+        </aside>
 
         {/* CHAT */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-5 py-8">
-            {/* EMPTY STATE */}
-            {messages.length === 0 && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-                className="pt-12 pb-8 text-center space-y-6">
-                <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-purple/20 to-blue/20 border border-white/[0.06] flex items-center justify-center">
-                  <span className="text-2xl font-bold bg-gradient-to-r from-purple to-cyan bg-clip-text text-transparent">$</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold tracking-tight mb-2">What are you building?</h2>
-                  <p className="text-[13px] text-text-dim max-w-md mx-auto leading-relaxed">Describe your project. I plan stages, find tools, check policies, pay via x402, and ship it live. Real deployments, real domain checks, real payments.</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 max-w-lg mx-auto">
-                  {PROMPTS.map((p, i) => (
-                    <motion.button key={p.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.06 }}
-                      onClick={() => setInput(p.label.toLowerCase() + " for my startup")}
-                      className="text-left p-3.5 rounded-xl border border-border hover:border-border-bright hover:bg-white/[0.02] transition-all group">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p.icon size={13} className="text-text-muted group-hover:text-accent transition-colors" />
-                        <span className="text-[11px] font-medium">{p.label}</span>
-                      </div>
-                      <span className="text-[10px] text-text-muted">{p.desc}</span>
-                    </motion.button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {/* MESSAGES */}
-            <AnimatePresence>
-              {messages.map(msg => (
-                <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
-                  {msg.role === "user" && (
-                    <div className="flex justify-end mb-5">
-                      <div className="max-w-[80%] bg-gradient-to-r from-blue/10 to-purple/10 border border-white/[0.06] rounded-2xl rounded-br-md px-4 py-3 text-[13px] leading-relaxed">{msg.content}</div>
-                    </div>
-                  )}
-                  {msg.role === "assistant" && (
-                    <div className="flex gap-3 mb-6 group">
-                      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-accent/20 to-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <span className="text-[8px] font-bold text-accent">PM</span>
-                      </div>
-                      <div className="flex-1 min-w-0 space-y-4">
-                        {msg.content && (
-                          <div className="relative">
-                            <div className="text-[13px] text-text-secondary leading-[1.75] [&_strong]:text-text [&_strong]:font-semibold [&_table]:w-full [&_table]:text-[10px] [&_table]:font-[family-name:var(--font-mono)] [&_table]:mt-2 [&_table]:mb-2 [&_th]:text-left [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-border [&_th]:text-text-muted [&_th]:font-medium [&_th]:bg-white/[0.02] [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-white/[0.03] [&_ul]:space-y-1 [&_ul]:my-2 [&_ol]:space-y-1 [&_ol]:my-2 [&_li]:text-text-dim [&_code]:bg-white/[0.04] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:text-[11px] [&_code]:font-[family-name:var(--font-mono)] [&_a]:text-accent [&_a]:no-underline hover:[&_a]:underline [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-4 [&_h2]:mb-1.5 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h4]:text-xs [&_h4]:font-medium [&_h4]:mt-2 [&_h4]:mb-1 [&_p]:mb-2 [&_hr]:border-border [&_hr]:my-3">
-                              <ReactMarkdown>{msg.content}</ReactMarkdown>
-                              {msg.isStreaming && <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="text-accent">|</motion.span>}
-                            </div>
-                            <CopyBtn text={msg.content} />
-                          </div>
-                        )}
-                        {msg.stages && msg.stages.length > 0 && (
-                          <div className="space-y-2">{msg.stages.map((s, i) => <StageCard key={s.stageId} stage={s} index={i} />)}</div>
-                        )}
-                        {msg.summary && <SummaryCard data={msg.summary} />}
-                      </div>
-                    </div>
-                  )}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-3xl mx-auto px-5 py-6 space-y-1">
+              {/* EMPTY STATE */}
+              {messages.length === 0 && (
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="pt-16 pb-8 text-center space-y-5">
+                  <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200 }}
+                    className="mx-auto w-14 h-14 rounded-2xl bg-surface border border-border flex items-center justify-center">
+                    <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+                      <rect width="32" height="32" rx="8" fill="url(#lg2)" />
+                      <path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <defs><linearGradient id="lg2" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs>
+                    </svg>
+                  </motion.div>
+                  <div>
+                    <h2 className="text-lg font-semibold tracking-tight mb-1">What are you building?</h2>
+                    <p className="text-[12px] text-text-dim max-w-md mx-auto leading-relaxed">I plan projects, find the best tools, check spending policies, pay via x402, and deploy live sites. Real wallet, real payments, real deployments.</p>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2 pt-1">
+                    {["Build a landing page for my startup", "Run a security audit on my API", "Research top 5 competitors in my space", "Create all assets for a product launch"].map((s, i) => (
+                      <motion.button key={s} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.05 }}
+                        onClick={() => setInput(s)}
+                        className="text-[10px] px-3 py-1.5 rounded-lg border border-border text-text-dim hover:text-text hover:border-border-bright hover:bg-surface transition-all">
+                        {s}
+                      </motion.button>
+                    ))}
+                  </div>
                 </motion.div>
-              ))}
-            </AnimatePresence>
+              )}
 
-            {/* LIVE STAGES */}
-            {liveStages.length > 0 && (
-              <div className="flex gap-3 mb-6">
-                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-accent/20 to-cyan/20 flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[8px] font-bold text-accent">PM</span>
+              {/* MESSAGES */}
+              <AnimatePresence>
+                {messages.map(msg => (
+                  <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
+                    {msg.role === "user" && (
+                      <div className="flex gap-3 py-4">
+                        <div className="h-6 w-6 rounded-lg bg-surface-2 border border-border flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="text-[8px] font-[family-name:var(--font-mono)] text-text-dim font-bold">U</span>
+                        </div>
+                        <div className="text-[13px] text-text leading-relaxed pt-0.5">{msg.content}</div>
+                      </div>
+                    )}
+                    {msg.role === "assistant" && (
+                      <div className="flex gap-3 py-4 border-t border-border/30 group relative">
+                        <div className="h-6 w-6 rounded-lg bg-accent/15 flex items-center justify-center shrink-0 mt-0.5">
+                          <svg width="12" height="12" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="url(#lg3)" /><path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><defs><linearGradient id="lg3" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs></svg>
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-4">
+                          {msg.content && (
+                            <div className="relative">
+                              <div className="text-[13px] text-text-secondary leading-[1.75] [&_strong]:text-text [&_strong]:font-semibold [&_table]:w-full [&_table]:text-[10px] [&_table]:font-[family-name:var(--font-mono)] [&_table]:my-2 [&_th]:text-left [&_th]:px-2 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-border [&_th]:text-text-muted [&_th]:font-medium [&_td]:px-2 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-border/50 [&_ul]:space-y-1 [&_ul]:my-2 [&_ol]:space-y-1 [&_ol]:my-2 [&_li]:text-text-dim [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-[family-name:var(--font-mono)] [&_a]:text-accent [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-4 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h4]:text-xs [&_h4]:font-medium [&_p]:mb-2 [&_hr]:border-border [&_hr]:my-3">
+                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                {msg.isStreaming && <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="text-accent">|</motion.span>}
+                              </div>
+                              <CopyBtn text={msg.content} />
+                            </div>
+                          )}
+                          {msg.stages && msg.stages.length > 0 && <div className="space-y-2">{msg.stages.map((s, i) => <StageCard key={s.stageId} stage={s} index={i} />)}</div>}
+                          {msg.summary && <SummaryCard data={msg.summary} />}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {liveStages.length > 0 && (
+                <div className="flex gap-3 py-4 border-t border-border/30">
+                  <div className="h-6 w-6 rounded-lg bg-accent/15 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg width="12" height="12" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="url(#lg4)" /><path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><defs><linearGradient id="lg4" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs></svg>
+                  </div>
+                  <div className="flex-1 space-y-2">{liveStages.map((s, i) => <StageCard key={s.stageId} stage={s} index={i} live />)}</div>
                 </div>
-                <div className="flex-1 space-y-2">{liveStages.map((s, i) => <StageCard key={s.stageId} stage={s} index={i} live />)}</div>
-              </div>
-            )}
-
-            {isLoading && liveStages.length === 0 && messages[messages.length - 1]?.role === "user" && (
-              <div className="flex gap-3 mb-6">
-                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-accent/20 to-cyan/20 flex items-center justify-center shrink-0">
-                  <span className="text-[8px] font-bold text-accent">PM</span>
+              )}
+              {isLoading && liveStages.length === 0 && messages[messages.length - 1]?.role === "user" && (
+                <div className="flex gap-3 py-4">
+                  <div className="h-6 w-6 rounded-lg bg-accent/15 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="url(#lg5)" /><path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><defs><linearGradient id="lg5" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs></svg></div>
+                  <div className="flex items-center gap-1.5 pt-1">
+                    {[0,1,2].map(i => <motion.span key={i} animate={{ opacity: [0.15, 0.6, 0.15] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }} className="w-1.5 h-1.5 rounded-full bg-text-muted" />)}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {[0, 1, 2].map(i => (
-                    <motion.span key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                      className="w-1.5 h-1.5 rounded-full bg-text-muted" />
-                  ))}
-                </div>
-              </div>
-            )}
-            <div ref={bottomRef} />
+              )}
+              <div ref={bottomRef} />
+            </div>
           </div>
-        </div>
 
-        {/* INPUT */}
-        <div className="shrink-0 border-t border-border p-4 glass">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-3">
-              <div className="flex-1 relative">
-                <textarea ref={inputRef} value={input} onChange={e => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
+          {/* INPUT */}
+          <div className="shrink-0 border-t border-border bg-bg/80 backdrop-blur-lg">
+            <div className="max-w-3xl mx-auto px-5 py-3">
+              <div className="flex gap-2 items-end">
+                <textarea ref={inputRef} value={input}
+                  onChange={e => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; }}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                   placeholder="Describe your project, ask questions, or give feedback..."
                   disabled={isLoading} rows={1}
-                  className="w-full bg-white/[0.03] border border-border rounded-xl px-4 py-3 pr-12 text-[13px] resize-none focus:outline-none focus:border-border-bright focus:shadow-[0_0_20px_rgba(255,255,255,0.03)] placeholder:text-text-muted transition-all min-h-[48px] max-h-[120px]" />
+                  className="flex-1 bg-surface border border-border rounded-xl px-4 py-2.5 text-[13px] resize-none focus:outline-none focus:border-border-bright placeholder:text-text-muted transition-colors min-h-[42px] max-h-[120px]" />
                 <motion.button onClick={send} disabled={isLoading || !input.trim()}
-                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                  className="absolute right-2 bottom-2 h-8 w-8 rounded-lg bg-gradient-to-r from-accent to-blue flex items-center justify-center disabled:opacity-20 disabled:cursor-not-allowed transition-opacity">
-                  <Send size={14} className="text-white" />
+                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                  className="h-[42px] px-5 rounded-xl bg-white text-[#09090b] text-xs font-semibold disabled:opacity-15 disabled:cursor-not-allowed transition-colors shrink-0">
+                  Send
                 </motion.button>
               </div>
-            </div>
-            <div className="flex items-center justify-between mt-2 text-[9px] font-[family-name:var(--font-mono)] text-text-muted">
-              <span>{messages.filter(m => m.role === "user").length} messages / ${budget} budget / {priority}</span>
-              <span>Enter to send</span>
+              <div className="flex justify-between mt-1.5 text-[8px] font-[family-name:var(--font-mono)] text-text-muted">
+                <span>{messages.filter(m => m.role === "user").length} messages / ${budget} budget / {priority}</span>
+                <span>enter to send</span>
+              </div>
             </div>
           </div>
         </div>
@@ -405,60 +363,54 @@ export default function AppPage() {
   );
 }
 
-// STAGE CARD
 function StageCard({ stage, index, live }: { stage: StageResult; index: number; live?: boolean }) {
   const [open, setOpen] = useState(live || false);
-  const isDone = stage.status === "done";
-  const isRunning = stage.status === "running";
+  const isDone = stage.status === "done"; const isRunning = stage.status === "running";
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: live ? 0 : index * 0.05 }}
-      className={`rounded-xl border transition-all ${isDone ? "glass" : isRunning ? "glass border-accent/20 shadow-[0_0_20px_rgba(34,197,94,0.05)]" : "glass opacity-50"}`}>
-      <button onClick={() => setOpen(!open)} className="w-full p-3.5 flex items-center justify-between text-left">
-        <div className="flex items-center gap-3">
-          <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-[family-name:var(--font-mono)] font-bold ${isDone ? "bg-accent/15 text-accent" : isRunning ? "bg-white/10 text-white" : "bg-white/5 text-text-muted"}`}>{index + 1}</div>
+      className={`rounded-xl border transition-all ${isDone ? "bg-surface border-border" : isRunning ? "bg-surface border-accent/20" : "bg-surface border-border/50 opacity-50"}`}>
+      <button onClick={() => setOpen(!open)} className="w-full p-3 flex items-center justify-between text-left">
+        <div className="flex items-center gap-2.5">
+          <div className={`h-6 w-6 rounded-lg flex items-center justify-center text-[9px] font-[family-name:var(--font-mono)] font-bold ${isDone ? "bg-accent/15 text-accent" : isRunning ? "bg-surface-3 text-white" : "bg-surface-2 text-text-muted"}`}>{index + 1}</div>
           <div>
-            <span className="text-[12px] font-medium block">{stage.stageName}</span>
-            {stage.stageDescription && <span className="text-[10px] text-text-dim">{stage.stageDescription}</span>}
+            <span className="text-[11px] font-medium block">{stage.stageName}</span>
+            {stage.stageDescription && <span className="text-[9px] text-text-dim">{stage.stageDescription}</span>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {stage.provider && <span className="text-[9px] font-[family-name:var(--font-mono)] text-text-dim px-2 py-0.5 rounded-md bg-white/[0.04]">{stage.provider}</span>}
+          {stage.provider && <span className="text-[8px] font-[family-name:var(--font-mono)] text-text-dim bg-surface-2 px-1.5 py-0.5 rounded">{stage.provider}</span>}
           {stage.cost !== undefined && <span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums text-text-dim">-${stage.cost.toFixed(3)}</span>}
           {isDone && <span className="h-2 w-2 rounded-full bg-accent" />}
           {isRunning && <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }} className="h-2 w-2 rounded-full bg-amber" />}
+          <span className="text-[10px] text-text-muted">{open ? "-" : "+"}</span>
         </div>
       </button>
       <AnimatePresence>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="px-3.5 pb-3.5 space-y-2">
+            <div className="px-3 pb-3 space-y-2">
               {stage.providers && stage.providers.length > 0 && (
-                <div className="rounded-lg overflow-hidden border border-border">
+                <div className="rounded-lg border border-border overflow-hidden">
                   <table className="w-full text-[9px] font-[family-name:var(--font-mono)]">
-                    <thead><tr className="bg-white/[0.02] text-text-muted"><th className="text-left px-2.5 py-1.5">Provider</th><th className="text-right px-2.5 py-1.5">Price</th><th className="text-right px-2.5 py-1.5">Quality</th><th className="text-right px-2.5 py-1.5">Score</th></tr></thead>
+                    <thead><tr className="bg-surface-2 text-text-muted"><th className="text-left px-2 py-1">Provider</th><th className="text-right px-2 py-1">Price</th><th className="text-right px-2 py-1">Quality</th><th className="text-right px-2 py-1">Score</th></tr></thead>
                     <tbody>{stage.providers.map((p, i) => (
-                      <tr key={p.name} className={i === 0 ? "bg-accent/[0.03]" : ""}>
-                        <td className="px-2.5 py-1.5">{i === 0 && <span className="text-accent mr-1">{">"}</span>}{p.name}</td>
-                        <td className="text-right px-2.5 py-1.5 tabular-nums">${p.price.toFixed(3)}</td>
-                        <td className="text-right px-2.5 py-1.5 tabular-nums">{p.quality}/10</td>
-                        <td className="text-right px-2.5 py-1.5 tabular-nums text-accent">{p.score.toFixed(1)}</td>
+                      <tr key={p.name} className={`border-t border-border/50 ${i === 0 ? "bg-accent/[0.03]" : ""}`}>
+                        <td className="px-2 py-1">{i === 0 && <span className="text-accent mr-1">{">"}</span>}{p.name}</td>
+                        <td className="text-right px-2 py-1 tabular-nums">${p.price.toFixed(3)}</td>
+                        <td className="text-right px-2 py-1 tabular-nums">{p.quality}/10</td>
+                        <td className="text-right px-2 py-1 tabular-nums text-accent">{p.score.toFixed(1)}</td>
                       </tr>
                     ))}</tbody>
                   </table>
                 </div>
               )}
               <div className="flex flex-wrap gap-1.5">
-                {stage.governancePassed !== undefined && (
-                  <span className={`px-2 py-0.5 rounded-md text-[8px] font-medium ${stage.governancePassed ? "bg-accent/10 text-accent" : "bg-red/10 text-red"}`}>policy {stage.governancePassed ? "passed" : "denied"}</span>
-                )}
-                {stage.paymentTxHash && <span className="px-2 py-0.5 rounded-md text-[8px] font-[family-name:var(--font-mono)] bg-white/[0.04] text-text-muted">{stage.paymentTxHash.slice(0, 18)}...</span>}
+                {stage.governancePassed !== undefined && <span className={`px-2 py-0.5 rounded text-[8px] font-medium ${stage.governancePassed ? "bg-accent/10 text-accent" : "bg-red/10 text-red"}`}>policy {stage.governancePassed ? "passed" : "denied"}</span>}
+                {stage.paymentTxHash && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.paymentTxHash.slice(0, 18)}...</span>}
+                {stage.latencyMs && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.latencyMs}ms</span>}
               </div>
-              {stage.output && <div className="bg-white/[0.02] rounded-lg p-3 text-[11px] text-text-secondary leading-relaxed">{stage.output}</div>}
-              {isRunning && !stage.output && (
-                <div className="flex items-center gap-2 py-2">
-                  {[0, 1, 2].map(i => (<motion.span key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }} className="w-1.5 h-1.5 rounded-full bg-text-muted" />))}
-                </div>
-              )}
+              {stage.output && <div className="bg-surface-2 rounded-lg p-3 text-[11px] text-text-secondary leading-relaxed">{stage.output}</div>}
+              {isRunning && !stage.output && <div className="flex items-center gap-1.5 py-2">{[0,1,2].map(i => <motion.span key={i} animate={{ opacity: [0.15, 0.6, 0.15] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }} className="w-1.5 h-1.5 rounded-full bg-text-muted" />)}</div>}
             </div>
           </motion.div>
         )}
@@ -467,12 +419,11 @@ function StageCard({ stage, index, live }: { stage: StageResult; index: number; 
   );
 }
 
-// SUMMARY
 function SummaryCard({ data }: { data: Record<string, unknown> }) {
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl glass border-accent/20 p-4 shadow-[0_0_30px_rgba(34,197,94,0.05)]">
-      <div className="grid grid-cols-4 gap-4 text-center">
+      className="rounded-xl border border-accent/20 bg-surface p-4">
+      <div className="grid grid-cols-4 gap-3 text-center">
         {[
           { l: "Cost", v: `$${((data.totalCost as number) || 0).toFixed(4)}` },
           { l: "Stages", v: String((data.totalSteps as number) || 0) },
@@ -480,8 +431,8 @@ function SummaryCard({ data }: { data: Record<string, unknown> }) {
           { l: "Payments", v: String(((data.transactions as unknown[]) || []).length) },
         ].map(s => (
           <div key={s.l}>
-            <span className="text-[8px] font-medium uppercase tracking-widest text-text-muted block mb-0.5">{s.l}</span>
-            <span className="text-sm font-bold font-[family-name:var(--font-mono)] tabular-nums">{s.v}</span>
+            <span className="text-[7px] font-medium uppercase tracking-widest text-text-dim block">{s.l}</span>
+            <span className="text-sm font-semibold font-[family-name:var(--font-mono)] tabular-nums">{s.v}</span>
           </div>
         ))}
       </div>
