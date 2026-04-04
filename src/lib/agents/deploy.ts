@@ -41,33 +41,50 @@ export function generateLandingPage(
   <title>${projectName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #09090b; color: #fafafa; min-height: 100vh; }
-    .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
-    header { padding: 20px 0; border-bottom: 1px solid #27272a; display: flex; justify-content: space-between; align-items: center; }
-    header .logo { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-    header nav a { font-size: 13px; color: #a1a1aa; text-decoration: none; margin-left: 24px; transition: color 0.2s; }
-    header nav a:hover { color: #fafafa; }
-    .hero { padding: 100px 0 80px; text-align: center; }
-    .hero h1 { font-size: 52px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.08; margin-bottom: 20px; background: linear-gradient(135deg, #fafafa, #a1a1aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .hero p { font-size: 18px; color: #a1a1aa; max-width: 480px; margin: 0 auto 36px; line-height: 1.6; }
-    .cta { display: inline-block; background: ${brandColor}; color: #09090b; padding: 14px 36px; border-radius: 12px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
-    .cta:hover { opacity: 0.9; transform: translateY(-1px); }
-    .features { padding: 80px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .feature { background: #0f0f11; border: 1px solid #27272a; border-radius: 16px; padding: 28px; transition: all 0.2s; }
-    .feature:hover { border-color: #3f3f46; transform: translateY(-2px); }
-    .feature h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-    .feature p { font-size: 13px; color: #71717a; line-height: 1.6; }
-    .social-proof { padding: 40px 0; text-align: center; border-top: 1px solid #18181b; }
-    .social-proof p { font-size: 13px; color: #52525b; }
-    .social-proof .logos { display: flex; justify-content: center; gap: 32px; margin-top: 16px; opacity: 0.4; }
-    .social-proof .logos span { font-size: 14px; font-weight: 600; color: #71717a; }
-    footer { padding: 32px 0; border-top: 1px solid #27272a; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #52525b; }
-    footer a { color: #52525b; text-decoration: none; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #09090b; color: #fafafa; min-height: 100vh; overflow-x: hidden; }
+    .container { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+    header { padding: 16px 0; border-bottom: 1px solid #1a1a1f; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: rgba(9,9,11,0.85); backdrop-filter: blur(12px); z-index: 50; }
+    header .logo { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+    header nav { display: flex; gap: 4px; }
+    header nav a { font-size: 12px; color: #71717a; text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; }
+    header nav a:hover { color: #fafafa; background: #18181b; }
+    .hero { padding: 120px 0 100px; text-align: center; position: relative; }
+    .hero::before { content: ''; position: absolute; top: 40px; left: 50%; transform: translateX(-50%); width: 600px; height: 400px; background: radial-gradient(ellipse, ${brandColor}15, transparent 70%); pointer-events: none; }
+    .hero h1 { font-size: 56px; font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; margin-bottom: 20px; background: linear-gradient(135deg, #fafafa 0%, #a1a1aa 50%, #fafafa 100%); background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: shimmer 4s linear infinite; position: relative; }
+    .hero p { font-size: 17px; color: #a1a1aa; max-width: 460px; margin: 0 auto 40px; line-height: 1.65; }
+    .cta-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .cta { display: inline-flex; align-items: center; gap: 8px; background: ${brandColor}; color: #09090b; padding: 14px 32px; border-radius: 14px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all 0.25s; border: none; cursor: pointer; }
+    .cta:hover { transform: translateY(-2px); box-shadow: 0 8px 30px ${brandColor}40; }
+    .cta-secondary { background: transparent; color: #a1a1aa; border: 1px solid #27272a; }
+    .cta-secondary:hover { border-color: #3f3f46; color: #fafafa; box-shadow: none; transform: translateY(-1px); }
+    .features { padding: 80px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .feature { background: #0c0c0e; border: 1px solid #1a1a1f; border-radius: 20px; padding: 32px 28px; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden; }
+    .feature::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, ${brandColor}40, transparent); opacity: 0; transition: opacity 0.3s; }
+    .feature:hover { border-color: #27272a; transform: translateY(-4px); }
+    .feature:hover::before { opacity: 1; }
+    .feature .icon { width: 40px; height: 40px; border-radius: 12px; background: ${brandColor}15; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 18px; }
+    .feature h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; letter-spacing: -0.01em; }
+    .feature p { font-size: 13px; color: #71717a; line-height: 1.65; }
+    .stats { padding: 60px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; text-align: center; border-top: 1px solid #1a1a1f; }
+    .stat-num { font-size: 36px; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, ${brandColor}, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .stat-label { font-size: 12px; color: #52525b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+    footer { padding: 32px 0; border-top: 1px solid #1a1a1f; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #3f3f46; }
+    footer a { color: #52525b; text-decoration: none; transition: color 0.2s; }
     footer a:hover { color: #a1a1aa; }
-    .badge { display: inline-flex; align-items: center; gap: 8px; background: #18181b; border: 1px solid #27272a; border-radius: 99px; padding: 8px 16px; font-size: 12px; color: #a1a1aa; margin-bottom: 28px; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; background: #111113; border: 1px solid #1a1a1f; border-radius: 99px; padding: 8px 18px; font-size: 12px; color: #a1a1aa; margin-bottom: 28px; animation: fadeUp 0.6s ease-out; }
     .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: ${brandColor}; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-    @media (max-width: 640px) { .hero h1 { font-size: 36px; } .hero { padding: 60px 0 40px; } }
+    .mascot { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: #111113; border: 1px solid #27272a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; cursor: pointer; transition: all 0.3s; z-index: 100; animation: float 3s ease-in-out infinite; }
+    .mascot:hover { transform: scale(1.15); border-color: ${brandColor}; box-shadow: 0 0 20px ${brandColor}30; }
+    @keyframes shimmer { 0% { background-position: 200% center; } 100% { background-position: -200% center; } }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeUp 0.6s ease-out both; }
+    .fade-in-1 { animation-delay: 0.1s; }
+    .fade-in-2 { animation-delay: 0.2s; }
+    .fade-in-3 { animation-delay: 0.3s; }
+    .fade-in-4 { animation-delay: 0.4s; }
+    @media (max-width: 640px) { .hero h1 { font-size: 36px; } .hero { padding: 80px 0 60px; } .stats { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -77,28 +94,59 @@ export function generateLandingPage(
       <nav><a href="#">Features</a><a href="#">Pricing</a><a href="#">About</a></nav>
     </header>
     <section class="hero">
-      <div class="badge"><span class="dot"></span>Now available</div>
-      <h1>${headline}</h1>
-      <p>${description}</p>
-      <a href="#" class="cta">${ctaText}</a>
+      <div class="badge fade-in"><span class="dot"></span>Now available</div>
+      <h1 class="fade-in fade-in-1">${headline}</h1>
+      <p class="fade-in fade-in-2">${description}</p>
+      <div class="cta-group fade-in fade-in-3">
+        <a href="#" class="cta">${ctaText}</a>
+        <a href="#features" class="cta cta-secondary">Learn more</a>
+      </div>
     </section>
-    <section class="features">
-${features.map(f => {
+    <section class="features" id="features">
+${features.map((f, idx) => {
   const i = f.indexOf(": ");
   const title = i > -1 ? f.slice(0, i) : f;
   const desc = i > -1 ? f.slice(i + 2) : "";
-  return `      <div class="feature"><h3>${title}</h3><p>${desc || f}</p></div>`;
+  const icons = ["&#9889;", "&#9733;", "&#9775;", "&#9830;", "&#10024;", "&#9827;"];
+  return `      <div class="feature fade-in fade-in-${idx + 1}">
+        <div class="icon">${icons[idx % icons.length]}</div>
+        <h3>${title}</h3>
+        <p>${desc || f}</p>
+      </div>`;
 }).join("\n")}
     </section>
-    <div class="social-proof">
-      <p>Trusted by teams everywhere</p>
-      <div class="logos"><span>Vercel</span><span>Stripe</span><span>Linear</span><span>Notion</span></div>
-    </div>
+    <section class="stats">
+      <div class="fade-in fade-in-1"><div class="stat-num">10k+</div><div class="stat-label">Happy customers</div></div>
+      <div class="fade-in fade-in-2"><div class="stat-num">99.9%</div><div class="stat-label">Uptime</div></div>
+      <div class="fade-in fade-in-3"><div class="stat-num">4.9/5</div><div class="stat-label">Rating</div></div>
+    </section>
     <footer>
       <span>${projectName} &copy; ${new Date().getFullYear()}</span>
       <span>Built with <a href="https://agentpm.larp.click" target="_blank">AgentPM</a></span>
     </footer>
   </div>
+  <div class="mascot" onclick="this.style.transform='scale(1.3) rotate(20deg)'; setTimeout(()=>this.style.transform='',500)" title="Hi! I'm the ${projectName} mascot">&#128075;</div>
+  <script>
+    // Intersection Observer for scroll animations
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.style.opacity = '1';
+      });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.feature, .stats > div').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
+      observer.observe(el);
+    });
+    // Smooth scroll for nav links
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  </script>
 </body>
 </html>`;
 

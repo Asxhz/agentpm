@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useReadContract, useSignTypedData } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
@@ -419,8 +420,8 @@ export default function AppPage() {
                         </div>
                         <div className="flex-1 min-w-0 space-y-4">
                           {msg.content && (
-                            <div className="text-[13px] text-text-secondary leading-[1.7] whitespace-pre-wrap">
-                              {msg.content}
+                            <div className="text-[13px] text-text-secondary leading-[1.7] prose-sm prose-invert max-w-none [&_strong]:text-text [&_strong]:font-semibold [&_table]:w-full [&_table]:text-[10px] [&_table]:font-[family-name:var(--font-mono)] [&_th]:text-left [&_th]:px-2 [&_th]:py-1 [&_th]:border-b [&_th]:border-border [&_th]:text-text-dim [&_th]:font-medium [&_td]:px-2 [&_td]:py-1 [&_td]:border-b [&_td]:border-border/50 [&_ul]:space-y-1 [&_ol]:space-y-1 [&_li]:text-text-dim [&_code]:bg-surface-2 [&_code]:px-1 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-[family-name:var(--font-mono)] [&_a]:text-accent [&_a]:no-underline hover:[&_a]:underline [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h4]:text-xs [&_h4]:font-medium [&_h4]:mt-2 [&_h4]:mb-1 [&_p]:mb-2 [&_hr]:border-border [&_hr]:my-3">
+                              <ReactMarkdown>{msg.content}</ReactMarkdown>
                               {msg.isStreaming && <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="text-accent ml-0.5">|</motion.span>}
                             </div>
                           )}
