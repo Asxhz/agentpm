@@ -68,7 +68,7 @@ No executions yet this session. The user has not run any pipelines.
 
 ## YOUR WALLET
 - Address: ${w.address}
-- Balance: $${ws.wallet?.balance.toFixed(4) || "10.0000"} USDC
+- Balance: $${ws.wallet?.balance.toFixed(4) || "50.0000"} USDC [SIM - simulated balance]
 - Total spent this session: $${ws.totalSpent.toFixed(4)}
 - Transactions: ${ws.transactions.length}
 ${executionHistoryBlock}
@@ -79,11 +79,27 @@ ${gs.policies.map(p => `- ${p.name} (${p.active ? "active" : "disabled"}): ${p.r
 ## AVAILABLE TOOLS (${TOOL_PROVIDERS.length} providers)
 ${TOOL_PROVIDERS.map(p => `- ${p.name} [${p.category}] $${p.price}/call, quality ${p.qualityScore}/10, ${p.latencyMs}ms`).join("\n")}
 
-## REAL AGENT CAPABILITIES
-- **Domain Search Agent**: Checks REAL domain availability via RDAP protocol (live API, no auth). Searches .com, .io, .dev, .app, .co, .xyz, .ai, .tech. Also checks crypto domains (.crypto, .x, .wallet via Unstoppable Domains) and .eth via ENS/The Graph.
-- **Domain Purchase Agent**: Can purchase available domains. Checks real availability first via RDAP, then processes payment via x402. Supports traditional TLDs and crypto domains. Include "buy domain" in the execution brief to trigger purchase.
-- **Vercel Deploy Agent**: Generates a REAL landing page and deploys it as a REAL Vercel deployment via their API. Each site gets its own live .vercel.app URL that anyone in the world can visit. This is not simulated - real Vercel deployments.
-- **Custom Domain Connection**: After purchasing or if user has their own domain, generate DNS records (A record to 76.76.21.21, CNAME www to cname.vercel-dns.com).
+## CAPABILITIES AND TRUTH LABELS
+Every action you take has a truth label. You MUST include these labels when reporting results.
+
+**[REAL] Domain Search**: Checks actual domain availability via RDAP protocol. Live API, real data.
+**[REAL] EIP-712 Signing**: Real cryptographic signatures on Base Sepolia testnet via ethers.js.
+**[REAL] Vercel Deployment**: Deploys generated HTML to Vercel via API. Returns a real live URL.
+**[REAL] Governance Engine**: 5 verdicts (APPROVED/DENIED/ESCALATE/DOWNGRADE/REROUTE), real policy evaluation.
+
+**[SIM] Provider Execution**: Tool outputs (copy, images, code analysis) are simulated. The pipeline selects providers and simulates their output.
+**[SIM] Payment Settlement**: EIP-712 signing is real, but on-chain USDC transfer is simulated. No real money moves.
+**[SIM] Wallet Balance**: The $${ws.wallet?.balance.toFixed(2) || "50"} is an in-memory counter, not on-chain USDC.
+
+**[TESTNET] On-Chain Wallet**: The user's connected wallet reads real USDC balance from Base Sepolia testnet.
+
+CRITICAL RULES:
+- NEVER claim a feature is real if it is simulated
+- NEVER invent URLs that don't exist
+- NEVER claim the deployed site has features (real-time status, interactive menu, etc.) that the generated HTML template doesn't actually contain
+- When reporting deployment results, say exactly what was deployed: "A static landing page with hero, features section, and CTA"
+- Always include [REAL], [SIM], or [TESTNET] labels when reporting what happened
+- The generated sites are TEMPLATES with placeholder content. They look good but don't have custom functionality like ordering systems or real-time status.
 
 IMPORTANT: When deployment succeeds, the result includes a REAL live URL (like https://projectname-abc123.vercel.app). Always share this URL with the user prominently. This is a real site anyone can visit.
 

@@ -61,7 +61,7 @@ function createAgentWallet(
   return wallet;
 }
 
-export function initializeWallets(initialBalance: number = 10.0): AgentWallet {
+export function initializeWallets(initialBalance: number = 50.0): AgentWallet {
   if (initialized) {
     const existing = Array.from(walletStore.values()).find(
       (w) => w.name === "agent-router"

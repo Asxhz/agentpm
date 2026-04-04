@@ -36,17 +36,17 @@ export default function Landing() {
             Built on Open Wallet Standard + x402
           </div>
           <h1 className="text-5xl font-semibold tracking-tight leading-[1.1] mb-4">
-            Your AI project manager<br />
-            <span className="text-text-dim">with its own wallet.</span>
+            Give agents a wallet.<br />
+            <span className="text-text-dim">Without giving them a blank check.</span>
           </h1>
           <p className="text-base text-text-dim max-w-lg mx-auto leading-relaxed mb-8">
-            Describe a project. AgentPM plans stages, discovers the best tools, checks spending policies, pays providers via x402, and delivers results. Every payment is on-chain and auditable.
+            AgentPM is a policy-controlled spending runtime for autonomous AI agents. Delegated budgets, 5-verdict governance, human escalation gates, and full audit trails. Built on OWS and x402.
           </p>
           <div className="flex items-center justify-center gap-3">
             <Link href="/app">
               <motion.span whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 className="inline-flex h-10 px-6 items-center rounded-xl bg-white text-[#09090b] text-sm font-semibold">
-                Start a project
+                Open Console
               </motion.span>
             </Link>
             <a href="https://github.com" target="_blank" rel="noopener noreferrer"
@@ -122,15 +122,15 @@ export default function Landing() {
 
         {/* FEATURES */}
         <motion.section {...fade} transition={{ delay: 0.4 }} className="pb-20">
-          <h2 className="text-xl font-semibold tracking-tight text-center mb-10">Built for the agent economy</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-center mb-10">Governance-first agent infrastructure</h2>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { title: "OWS Wallet", desc: "Multi-chain wallet with local key custody. Supports EVM, Solana, Bitcoin, and 6 more chain families." },
-              { title: "x402 Payments", desc: "HTTP-native micropayments. Tools return 402, agent signs EIP-712 authorization, facilitator settles on-chain." },
-              { title: "Policy Engine", desc: "Spending limits, chain restrictions, rate limiting, and approval gates on every transaction." },
-              { title: "21 Tool Providers", desc: "Image generation, text, code analysis, translation, data processing, web scraping, and audio across 8 categories." },
-              { title: "AI Decision Engine", desc: "Claude evaluates providers on price, quality, latency, and reliability based on your priority." },
-              { title: "Full Audit Trail", desc: "Every payment, policy check, and tool execution logged with transaction hashes on Base Sepolia." },
+              { title: "5-Verdict Governance", desc: "APPROVED, DENIED, ESCALATE, DOWNGRADE, REROUTE. Not just pass/fail. The system thinks about alternatives." },
+              { title: "Delegated Budgets", desc: "Each sub-agent gets a scoped budget. Research: $0.20, Design: $0.50. Enforced per-agent, per-category." },
+              { title: "Human Escalation", desc: "Pipeline halts when risk is high. Interactive approval cards show budget impact, risk score, and alternatives." },
+              { title: "Honest Truth Labels", desc: "Every action tagged [REAL], [TESTNET], or [SIM]. No pretending. Domain checks are real. Payment settlement is simulated." },
+              { title: "Partial Completion", desc: "When budget runs out, the system completes what it can and defers the rest. Not crash, graceful degradation." },
+              { title: "Audit Trace Export", desc: "Downloadable JSON with every decision, every denial, every reroute, every payment. Full forensic replay." },
             ].map((f, i) => (
               <motion.div key={f.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 + i * 0.06 }}
@@ -144,15 +144,13 @@ export default function Landing() {
 
         {/* TRACK COVERAGE */}
         <motion.section {...fade} transition={{ delay: 0.5 }} className="pb-20">
-          <h2 className="text-xl font-semibold tracking-tight text-center mb-3">One product, five tracks</h2>
-          <p className="text-sm text-text-dim text-center mb-8 max-w-lg mx-auto">Every project execution naturally demonstrates all five OWS hackathon tracks in a single flow.</p>
-          <div className="grid grid-cols-5 gap-3">
+          <h2 className="text-xl font-semibold tracking-tight text-center mb-3">Optimized for Track 2: Agent Spend Governance</h2>
+          <p className="text-sm text-text-dim text-center mb-8 max-w-lg mx-auto">Deep governance with secondary support from Tracks 3 and 4.</p>
+          <div className="grid grid-cols-3 gap-4">
             {[
-              { n: "01", l: "Commerce", d: "Full autonomous commerce loop at every stage" },
-              { n: "02", l: "Governance", d: "Policy engine checks every payment" },
-              { n: "03", l: "Pay-Per-Call", d: "Every tool paid via x402 micropayment" },
-              { n: "04", l: "Multi-Agent", d: "Stages coordinate across providers" },
-              { n: "05", l: "Creative", d: "Autonomous PM spending money for you" },
+              { n: "02", l: "Spend Governance", d: "Primary track. Delegated budgets, 5-verdict policy engine, escalation gates, audit trails, partial completion, strict mode." },
+              { n: "03", l: "Pay-Per-Call", d: "Every provider quoted and scored. Economic reasoning drives selection. x402-compatible payment intents with truth labels." },
+              { n: "04", l: "Multi-Agent", d: "Overseer delegates to 5 sub-agents with scoped budgets. Agents can be constrained or revoked. Hierarchical authority." },
             ].map((t, i) => (
               <motion.div key={t.n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 + i * 0.05 }}
                 className="rounded-xl border border-accent/20 bg-accent/5 p-4 text-center">

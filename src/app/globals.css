@@ -1,20 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #09090b;
-  --color-surface: #0f0f11;
-  --color-surface-2: #18181b;
-  --color-surface-3: #27272a;
+  /* Pure black/white system. Depth from borders and opacity only. */
+  --color-bg: #000000;
+  --color-surface: #0a0a0a;
+  --color-surface-2: #141414;
+  --color-surface-3: #1f1f1f;
 
-  --color-border: #27272a;
-  --color-border-bright: #3f3f46;
+  --color-border: #1f1f1f;
+  --color-border-bright: #2e2e2e;
 
-  --color-text: #fafafa;
-  --color-text-secondary: #a1a1aa;
-  --color-text-dim: #71717a;
-  --color-text-muted: #52525b;
+  --color-text: #ededed;
+  --color-text-secondary: #999999;
+  --color-text-dim: #666666;
+  --color-text-muted: #444444;
 
-  --color-accent: #22c55e;
+  /* Minimal accent - only for governance states */
+  --color-accent: #ffffff;
   --color-blue: #3b82f6;
   --color-amber: #f59e0b;
   --color-red: #ef4444;
@@ -25,47 +27,16 @@
   --font-sans: var(--font-inter, "Inter"), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #27272a transparent;
-}
+* { scrollbar-width: thin; scrollbar-color: #1f1f1f transparent; }
 
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-}
+body { background: #000; color: #ededed; }
 
-@keyframes slide-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse-subtle { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
+.animate-fade-in { animation: fade-in 0.25s ease-out forwards; }
+.animate-pulse-subtle { animation: pulse-subtle 2s ease-in-out infinite; }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.animate-slide-in {
-  animation: slide-in 0.2s ease-out forwards;
-}
-
-.animate-pulse-dot {
-  animation: pulse-dot 1.5s ease-in-out infinite;
-}
-
-.cursor-blink::after {
-  content: "|";
-  animation: blink 1s step-end infinite;
-  color: var(--color-accent);
-  margin-left: 1px;
-}
-
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+::-webkit-scrollbar-thumb { background: #1f1f1f; border-radius: 2px; }
