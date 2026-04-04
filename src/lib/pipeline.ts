@@ -108,7 +108,7 @@ async function planProject(brief: string): Promise<ProjectStage[]> {
       max_tokens: 1024,
       messages: [{
         role: "user",
-        content: `You are an AI project manager. Given this project brief, plan exactly 5 stages to execute it.
+        content: `You are an AI project manager. Given this project brief, plan exactly 8 stages to execute it. Be thorough - include research, strategy, multiple creation stages, review, and deployment.
 
 Brief: "${brief}"
 
@@ -134,7 +134,7 @@ Respond ONLY with valid JSON (no markdown):
   ]
 }
 
-Always use exactly 5 stages in this order: research/discovery, strategy/planning, creation/building, review/QA, then delivery/final.`
+Always use exactly 8 stages. Include: research, strategy, content creation, visual design, review/QA, SEO/optimization, site build, and deployment. Use a variety of categories.`
       }],
     });
 
@@ -176,25 +176,33 @@ function getDefaultStages(brief: string): ProjectStage[] {
   const wantsDomain = /domain|url|\.com|\.io|\.dev|\.app|register/i.test(brief);
 
   if (wantsDeploy || wantsDomain) {
-    const stages = [
-      { id: "research", name: "Market Research", description: "Analyzing competitors and target audience", toolCategory: "web-scraping", action: "Research market" },
-      { id: "create", name: "Content Creation", description: "Writing copy for the landing page", toolCategory: "text-generation", action: "Write copy" },
-      { id: "design", name: "Visual Design", description: "Creating visual assets and graphics", toolCategory: "image-generation", action: "Design assets" },
+    const stages: ProjectStage[] = [
+      { id: "research", name: "Competitive Research", description: "Deep analysis of competitor sites, positioning, and market gaps", toolCategory: "web-scraping", action: "Scrape competitors" },
+      { id: "strategy", name: "Brand Strategy", description: "Developing positioning, messaging framework, and content plan", toolCategory: "data-processing", action: "Build strategy" },
+      { id: "copy", name: "Content Writing", description: "Writing all page copy, headlines, descriptions, and CTAs", toolCategory: "text-generation", action: "Write content" },
+      { id: "visuals", name: "Visual Design", description: "Creating hero imagery, icons, and visual brand assets", toolCategory: "image-generation", action: "Design visuals" },
+      { id: "review", name: "Quality Review", description: "Reviewing all content and visuals for consistency and quality", toolCategory: "code-analysis", action: "Review quality" },
+      { id: "seo", name: "SEO Optimization", description: "Meta tags, structured data, and search optimization", toolCategory: "text-generation", action: "Optimize SEO" },
     ];
     if (wantsDomain) {
       stages.push({ id: "domain", name: "Domain Search", description: "Checking domain availability across TLDs via RDAP", toolCategory: "domain", action: "Search domains" });
     }
-    stages.push({ id: "deploy", name: "Deploy to Production", description: "Building and deploying site to Vercel edge network", toolCategory: "deployment", action: "Deploy site" });
+    stages.push(
+      { id: "build", name: "Site Build", description: "Generating responsive HTML/CSS with animations and interactions", toolCategory: "text-generation", action: "Build site" },
+      { id: "deploy", name: "Production Deploy", description: "Deploying to Vercel edge network with SSL and CDN", toolCategory: "deployment", action: "Deploy" },
+    );
     return stages;
   }
 
-  // Default: content/marketing project
+  // Default: content/marketing project (7 stages for depth)
   return [
-    { id: "research", name: "Market Research", description: "Analyzing competitors and target audience", toolCategory: "web-scraping", action: "Research market" },
-    { id: "strategy", name: "Strategy", description: "Defining positioning, messaging, and creative direction", toolCategory: "data-processing", action: "Build strategy" },
-    { id: "create", name: "Content Creation", description: "Writing copy and generating visual assets", toolCategory: "text-generation", action: "Create content" },
-    { id: "design", name: "Visual Design", description: "Producing images, mockups, and graphics", toolCategory: "image-generation", action: "Design assets" },
-    { id: "review", name: "Quality Review", description: "Final review, QA, and delivery preparation", toolCategory: "code-analysis", action: "Review quality" },
+    { id: "research", name: "Deep Research", description: "Comprehensive competitor and market analysis", toolCategory: "web-scraping", action: "Research deeply" },
+    { id: "data", name: "Data Analysis", description: "Processing research data into actionable strategy", toolCategory: "data-processing", action: "Analyze data" },
+    { id: "strategy", name: "Content Strategy", description: "Defining messaging, tone, and content architecture", toolCategory: "text-generation", action: "Plan content" },
+    { id: "create", name: "Content Production", description: "Writing all copy, headlines, and descriptions", toolCategory: "text-generation", action: "Produce content" },
+    { id: "design", name: "Visual Production", description: "Creating all visual assets and graphics", toolCategory: "image-generation", action: "Create visuals" },
+    { id: "review", name: "Quality Assurance", description: "Comprehensive review of all deliverables", toolCategory: "code-analysis", action: "QA review" },
+    { id: "polish", name: "Final Polish", description: "Final optimization and delivery preparation", toolCategory: "text-generation", action: "Polish output" },
   ];
 }
 
