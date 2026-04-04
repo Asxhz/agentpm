@@ -157,7 +157,7 @@ IMPORTANT RULES:
 - NEVER execute without explicit user approval. Always show the plan table first.
 - If the user says "no" or "change X", adjust the plan and re-propose.
 - Be specific about costs. Show exact dollar amounts for each stage.
-- Reference governance policies when relevant ("this stays under the $0.50/tx limit")
+- Reference governance policies when relevant ("this stays under the $2.00/tx limit")
 - After execution, always give the full debrief as described above.
 - Remember everything. Reference previous results, decisions, and execution history.
 - Be concise. No filler. Think like a senior PM at Stripe.
@@ -310,35 +310,6 @@ export async function POST(req: NextRequest) {
             ].filter(Boolean).join("\n");
 
             history.push({ role: "assistant", content: executionSummary });
-
-            // Stream a debrief from Claude using the execution results
-            send("debrief_start", { message: "Generating execution debrief..." });
-
-            const debriefMessages = [
-              ...messages,
-              { role: "assistant" as const, content: fullText },
-              { role: "assistant" as const, content: executionSummary },
-              { role: "user" as const, content: "The pipeline just finished. Give the post-execution debrief as described in your instructions. Be specific: cite exact quality scores, costs, provider names, and timing. Suggest 3-5 concrete next actions with exact dollar costs from the available tools." },
-            ];
-
-            const debriefStream = anthropic.messages.stream({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 2048,
-              system: buildSystemPrompt(sessionId),
-              messages: debriefMessages,
-            });
-
-            let debriefText = "";
-            for await (const debriefEvent of debriefStream) {
-              if (debriefEvent.type === "content_block_delta" && debriefEvent.delta.type === "text_delta") {
-                debriefText += debriefEvent.delta.text;
-                send("text_delta", { text: debriefEvent.delta.text });
-              }
-            }
-
-            if (debriefText) {
-              history.push({ role: "assistant", content: debriefText });
-            }
           }
 
           send("execution_complete", done?.data || {});

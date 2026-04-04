@@ -12,7 +12,7 @@ import {
 
 export async function GET() {
   initializeWallets(
-    parseFloat(process.env.DEMO_WALLET_BALANCE || "10.00")
+    parseFloat(process.env.DEMO_WALLET_BALANCE || "50.00")
   );
 
   const state = getWalletState();
