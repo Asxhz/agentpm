@@ -377,17 +377,56 @@ export async function executePipeline(
 
   const stages = await planProject(task);
 
+  // PREFLIGHT CHECK: estimate total cost and verify budget
+  const preflight = stages.map(stage => {
+    const providers = getProvidersByCategory(stage.toolCategory);
+    const cheapest = providers.length > 0 ? Math.min(...providers.map(p => p.price)) : 0;
+    const recommended = providers.length > 0 ? providers.sort((a, b) => b.qualityScore - a.qualityScore)[0] : null;
+    return {
+      stageId: stage.id, stageName: stage.name, category: stage.toolCategory,
+      estimatedCost: recommended?.price || cheapest,
+      cheapestOption: cheapest,
+      wouldEscalate: (recommended?.price || 0) >= 0.08,
+    };
+  });
+  const estimatedTotal = preflight.reduce((s, p) => s + p.estimatedCost, 0);
+  const budgetSufficient = estimatedTotal <= config.budget;
+
   emit(onEvent, "thinking", {
-    message: `Project plan ready: ${stages.length} stages`,
+    message: `Project plan ready: ${stages.length} stages, estimated $${estimatedTotal.toFixed(3)}${!budgetSufficient ? ` (exceeds $${config.budget} budget)` : ""}`,
     stages: stages.map(s => ({ id: s.id, name: s.name, action: s.action })),
+    preflight: {
+      stages: preflight,
+      estimatedTotal,
+      budget: config.budget,
+      budgetSufficient,
+      stagesRequiringApproval: preflight.filter(p => p.wouldEscalate).length,
+    },
   });
 
   await delay(300);
 
-  // Execute each stage with retry + quality gate
+  // Execute each stage with retry + quality gate + partial completion
+  const deferredStages: string[] = [];
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
     const stageStartTime = Date.now();
+
+    // Budget guard: check if cheapest provider fits remaining budget
+    const stageProviders = getProvidersByCategory(stage.toolCategory);
+    const cheapestPrice = stageProviders.length > 0 ? Math.min(...stageProviders.map(p => p.price)) : 0;
+    if (costTracker.runningTotal + cheapestPrice > config.budget) {
+      // Defer remaining stages
+      for (let j = i; j < stages.length; j++) deferredStages.push(stages[j].name);
+      emit(onEvent, "budget_exceeded", {
+        message: `Budget exhausted at stage ${i + 1}. Spent $${costTracker.runningTotal.toFixed(4)} of $${config.budget} limit. Deferring: ${deferredStages.join(", ")}`,
+        spent: costTracker.runningTotal,
+        budget: config.budget,
+        deferredStages,
+        completedStages: results.length,
+      });
+      break;
+    }
 
     // Discover providers
     emit(onEvent, "discovery", {
@@ -700,6 +739,28 @@ export async function executePipeline(
     },
     stages: results.map(r => ({ name: r.stepId, provider: r.provider.name, cost: r.cost })),
     transactions: transactions.slice(0, 10).map(tx => ({ toolName: tx.toolName, amount: tx.amount, txHash: tx.txHash, status: tx.status })),
+    deferredStages,
+    partialCompletion: deferredStages.length > 0,
+    auditTrace: {
+      runId: crypto.randomUUID(),
+      task,
+      startedAt: new Date(pipelineStartTime).toISOString(),
+      completedAt: new Date().toISOString(),
+      durationMs: pipelineDurationMs,
+      budget: config.budget,
+      priority: config.priority,
+      totalSpent: costTracker.runningTotal,
+      stagesPlanned: stages.length,
+      stagesCompleted: results.length,
+      stagesDeferred: deferredStages.length,
+      costBreakdown: costTracker,
+      decisions: results.map(r => ({
+        stage: r.stepId,
+        provider: r.provider.name,
+        cost: r.cost,
+        truthLabel: (r as unknown as Record<string, unknown>).truthLabel || "SIM",
+      })),
+    },
   });
 
   return { task, steps: results, totalCost: totalSpent, totalLatencyMs: results.reduce((s, r) => s + r.latencyMs, 0), walletBalance: finalWallet?.balance ?? 0, transactions };

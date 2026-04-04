@@ -507,7 +507,7 @@ function SummaryCard({ data }: { data: Record<string, unknown> }) {
       <div className="grid grid-cols-4 gap-3 text-center">
         {[
           { l: "Cost", v: `$${((data.totalCost as number) || 0).toFixed(4)}` },
-          { l: "Stages", v: String((data.totalSteps as number) || 0) },
+          { l: "Stages", v: `${data.totalSteps || 0}${(data.deferredStages as string[])?.length ? ` (${(data.deferredStages as string[]).length} deferred)` : ""}` },
           { l: "Remaining", v: `$${((data.walletBalance as number) || 0).toFixed(4)}` },
           { l: "Payments", v: String(((data.transactions as unknown[]) || []).length) },
         ].map(s => (
@@ -517,6 +517,23 @@ function SummaryCard({ data }: { data: Record<string, unknown> }) {
           </div>
         ))}
       </div>
+      {/* Partial completion warning */}
+      {Boolean(data.partialCompletion) ? (
+        <div className="mt-3 p-2 rounded-lg bg-amber/10 border border-amber/20 text-[9px] text-amber">
+          Partial completion: {(data.deferredStages as string[])?.join(", ")} deferred due to budget constraints.
+        </div>
+      ) : null}
+      {/* Audit trace download */}
+      {data.auditTrace ? (
+        <button onClick={() => {
+          const blob = new Blob([JSON.stringify(data.auditTrace, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href = url; a.download = `agentpm-audit-${Date.now()}.json`; a.click();
+          URL.revokeObjectURL(url);
+        }} className="mt-2 w-full py-1.5 rounded-lg bg-surface-2 border border-border text-[9px] text-text-dim hover:text-text transition-colors font-[family-name:var(--font-mono)]">
+          Download Audit Trace (JSON)
+        </button>
+      ) : null}
     </motion.div>
   );
 }
