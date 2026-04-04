@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,7 +31,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${jetbrains.variable} min-h-screen bg-bg text-text antialiased font-[family-name:var(--font-sans)]`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

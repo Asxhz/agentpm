@@ -111,7 +111,7 @@ export async function deployToLarpClick(
 
       return {
         success: true,
-        url: `https://agentpm.larp.click/site/${subdomain}`,
+        url: `https://${subdomain}.larp.click`,
         deploymentId: `blob_${subdomain}`,
         projectName,
         status: "LIVE",
@@ -129,7 +129,7 @@ export async function deployToLarpClick(
 
   return {
     success: true,
-    url: `https://agentpm.larp.click/site/${subdomain}`,
+    url: `https://${subdomain}.larp.click`,
     deploymentId: `mem_${subdomain}`,
     projectName,
     status: "LIVE",
@@ -164,7 +164,7 @@ export async function getAllLarpClickSites(): Promise<{ subdomain: string; url: 
 
   // From in-memory
   for (const [sub, data] of inMemorySites) {
-    results.push({ subdomain: sub, url: `https://agentpm.larp.click/site/${sub}`, projectName: data.projectName });
+    results.push({ subdomain: sub, url: `https://${sub}.larp.click`, projectName: data.projectName });
   }
 
   // From Blob
@@ -175,7 +175,7 @@ export async function getAllLarpClickSites(): Promise<{ subdomain: string; url: 
         const parts = blob.pathname.split("/");
         const sub = parts[1];
         if (sub && !results.find(r => r.subdomain === sub)) {
-          results.push({ subdomain: sub, url: `https://agentpm.larp.click/site/${sub}`, projectName: sub });
+          results.push({ subdomain: sub, url: `https://${sub}.larp.click`, projectName: sub });
         }
       }
     } catch { /* ignore */ }

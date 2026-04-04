@@ -3,6 +3,58 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount, useReadContract, useSignTypedData } from "wagmi";
+import { formatUnits, parseUnits } from "viem";
+
+const USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
+const USDC_ABI = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+
+// Hook: read real USDC balance from Base Sepolia
+function useUsdcBalance() {
+  const { address } = useAccount();
+  const { data, refetch } = useReadContract({
+    address: USDC_ADDRESS,
+    abi: USDC_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address, refetchInterval: 15000 },
+  });
+  return { balance: data ? parseFloat(formatUnits(data, 6)) : 0, refetch };
+}
+
+// Hook: sign real x402 EIP-712 payment
+function useSignX402() {
+  const { address } = useAccount();
+  const { signTypedDataAsync } = useSignTypedData();
+
+  const signPayment = useCallback(async (to: string, amountUSD: number) => {
+    if (!address) throw new Error("Wallet not connected");
+    const value = parseUnits(amountUSD.toFixed(6), 6);
+    const nonce = ("0x" + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+    const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600);
+
+    const signature = await signTypedDataAsync({
+      domain: { name: "USD Coin", version: "2", chainId: 84532, verifyingContract: USDC_ADDRESS },
+      types: {
+        TransferWithAuthorization: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+        ],
+      },
+      primaryType: "TransferWithAuthorization",
+      message: { from: address, to: to as `0x${string}`, value, validAfter: 0n, validBefore, nonce },
+    });
+
+    return { signature, from: address, to, value: value.toString(), validAfter: "0", validBefore: validBefore.toString(), nonce };
+  }, [address, signTypedDataAsync]);
+
+  return { signPayment, address };
+}
 
 // ================================================================
 // TYPES
@@ -46,19 +98,7 @@ interface WalletInfo { balance: number; address: string; totalSpent: number; txC
 // COUNTER
 // ================================================================
 
-function Counter({ value, decimals = 4 }: { value: number; decimals?: number }) {
-  const [display, setDisplay] = useState(value);
-  useEffect(() => {
-    const from = display; const diff = value - from;
-    if (Math.abs(diff) < 0.00005) { setDisplay(value); return; }
-    const t0 = performance.now(); let raf: number;
-    const tick = (now: number) => { const p = Math.min((now - t0) / 500, 1); setDisplay(from + diff * (1 - Math.pow(1 - p, 3))); if (p < 1) raf = requestAnimationFrame(tick); };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-  return <span className="tabular-nums">{display.toFixed(decimals)}</span>;
-}
+// Counter removed - using real wallet balance from RainbowKit
 
 // ================================================================
 // MAIN
@@ -78,7 +118,6 @@ export default function AppPage() {
   const [vercelToken, setVercelToken] = useState("");
   const [customDomain, setCustomDomain] = useState("");
   const [deployedSites, setDeployedSites] = useState<{ subdomain: string; url: string; projectName: string }[]>([]);
-  const [onchain, setOnchain] = useState<{ address: string; ethBalance: string; usdcBalance: string; network: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -90,9 +129,6 @@ export default function AppPage() {
   }, []);
 
   useEffect(() => { refreshWallet(); }, [refreshWallet]);
-  useEffect(() => {
-    fetch("/api/x402").then(r => r.json()).then(setOnchain).catch(() => {});
-  }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, liveStages]);
 
   const resetAll = useCallback(async () => {
@@ -256,71 +292,7 @@ export default function AppPage() {
           </div>
 
           {sidebarTab === "wallet" && (
-            <div className="p-3 space-y-4 flex-1 overflow-y-auto">
-              {wallet && (
-                <>
-                  <div>
-                    <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1">Balance</span>
-                    <span className="text-xl font-semibold font-[family-name:var(--font-mono)]">$<Counter value={wallet.balance} /></span>
-                    <span className="text-[9px] text-text-muted ml-1">USDC</span>
-                  </div>
-                  <div className="font-[family-name:var(--font-mono)] text-[8px] text-text-muted bg-surface rounded px-2 py-1.5 break-all leading-relaxed">{wallet.address}</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-surface rounded p-2">
-                      <span className="text-[7px] uppercase tracking-wider text-text-dim block">Spent</span>
-                      <span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">${wallet.totalSpent.toFixed(4)}</span>
-                    </div>
-                    <div className="bg-surface rounded p-2">
-                      <span className="text-[7px] uppercase tracking-wider text-text-dim block">Payments</span>
-                      <span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">{wallet.txCount}</span>
-                    </div>
-                  </div>
-                  {onchain && (
-                    <div>
-                      <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">On-Chain (Base Sepolia)</span>
-                      <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
-                        <div className="flex justify-between"><span className="text-text-muted">address</span><span className="truncate ml-2 max-w-[100px]">{onchain.address.slice(0, 6)}...{onchain.address.slice(-4)}</span></div>
-                        <div className="flex justify-between"><span className="text-text-muted">ETH</span><span>{parseFloat(onchain.ethBalance).toFixed(4)}</span></div>
-                        <div className="flex justify-between"><span className="text-text-muted">USDC</span><span>{parseFloat(onchain.usdcBalance).toFixed(4)}</span></div>
-                        <a href={`https://sepolia.basescan.org/address/${onchain.address}`} target="_blank" rel="noopener noreferrer"
-                          className="text-[8px] text-accent hover:underline block mt-1">View on BaseScan</a>
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Policy Limits</span>
-                    <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
-                      <div className="flex justify-between"><span className="text-text-muted">per tx max</span><span>$0.50</span></div>
-                      <div className="flex justify-between"><span className="text-text-muted">daily max</span><span>$5.00</span></div>
-                      <div className="flex justify-between"><span className="text-text-muted">rate limit</span><span>30/day</span></div>
-                      <div className="flex justify-between"><span className="text-text-muted">chains</span><span>base-sepolia</span></div>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Budget</span>
-                    <div className="flex items-center gap-2">
-                      <input type="range" min="1" max="10" step="0.5" value={budget} onChange={e => setBudget(parseFloat(e.target.value))}
-                        className="flex-1 h-px bg-border appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white" />
-                      <span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums w-6 text-right">${budget}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Priority</span>
-                    <div className="grid grid-cols-2 gap-1">
-                      {(["cost","quality","speed","balanced"] as const).map(p => (
-                        <button key={p} onClick={() => setPriority(p)}
-                          className={`text-[8px] py-1 rounded font-[family-name:var(--font-mono)] transition-all capitalize ${
-                            priority === p ? "bg-white/10 text-text" : "text-text-muted hover:text-text-dim bg-surface"
-                          }`}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <button onClick={resetAll} className="w-full py-1.5 rounded bg-surface text-[9px] text-text-muted hover:text-text-secondary transition-colors font-[family-name:var(--font-mono)]">
-                    Reset session
-                  </button>
-                </>
-              )}
-            </div>
+            <WalletSidebar wallet={wallet} budget={budget} setBudget={setBudget} priority={priority} setPriority={setPriority} onReset={resetAll} />
           )}
 
           {sidebarTab === "txns" && (
@@ -648,5 +620,96 @@ function SummaryCard({ data }: { data: Record<string, unknown> }) {
         ))}
       </div>
     </motion.div>
+  );
+}
+
+// ================================================================
+// WALLET SIDEBAR (Real wallet via RainbowKit)
+// ================================================================
+
+function WalletSidebar({ wallet, budget, setBudget, priority, setPriority, onReset }: {
+  wallet: WalletInfo | null; budget: number; setBudget: (n: number) => void;
+  priority: string; setPriority: (s: string) => void; onReset: () => void;
+}) {
+  const { address, isConnected } = useAccount();
+  const { balance: usdcBalance } = useUsdcBalance();
+
+  return (
+    <div className="p-3 space-y-4 flex-1 overflow-y-auto">
+      <div>
+        <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-2">Your Wallet</span>
+        <div className="[&_button]:!rounded-lg [&_button]:!text-[10px] [&_button]:!h-8">
+          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+        </div>
+      </div>
+
+      {isConnected && address && (
+        <>
+          <div>
+            <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1">On-Chain (Base Sepolia)</span>
+            <span className="text-xl font-semibold font-[family-name:var(--font-mono)]">${usdcBalance.toFixed(4)}</span>
+            <span className="text-[9px] text-text-muted ml-1">USDC</span>
+            <a href={`https://sepolia.basescan.org/address/${address}`} target="_blank" rel="noopener noreferrer"
+              className="text-[8px] text-accent hover:underline block mt-1 font-[family-name:var(--font-mono)]">View on BaseScan</a>
+          </div>
+          {usdcBalance === 0 && (
+            <div className="bg-surface rounded-lg p-2.5 border border-amber/20">
+              <span className="text-[9px] text-amber font-medium block mb-1">Need testnet funds?</span>
+              <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer"
+                className="text-[8px] text-accent hover:underline block font-[family-name:var(--font-mono)]">Get USDC (Circle Faucet)</a>
+              <a href="https://portal.cdp.coinbase.com/products/faucet" target="_blank" rel="noopener noreferrer"
+                className="text-[8px] text-accent hover:underline block font-[family-name:var(--font-mono)]">Get ETH (Coinbase Faucet)</a>
+            </div>
+          )}
+        </>
+      )}
+
+      {wallet && (
+        <div>
+          <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1">Session</span>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-surface rounded p-2">
+              <span className="text-[7px] uppercase tracking-wider text-text-dim block">Budget Left</span>
+              <span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">${wallet.balance.toFixed(4)}</span>
+            </div>
+            <div className="bg-surface rounded p-2">
+              <span className="text-[7px] uppercase tracking-wider text-text-dim block">Spent</span>
+              <span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">${wallet.totalSpent.toFixed(4)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Policy</span>
+        <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
+          <div className="flex justify-between"><span className="text-text-muted">per tx</span><span>$0.50 max</span></div>
+          <div className="flex justify-between"><span className="text-text-muted">daily</span><span>$5.00 max</span></div>
+          <div className="flex justify-between"><span className="text-text-muted">network</span><span>base-sepolia</span></div>
+        </div>
+      </div>
+
+      <div>
+        <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Budget</span>
+        <div className="flex items-center gap-2">
+          <input type="range" min="1" max="10" step="0.5" value={budget} onChange={e => setBudget(parseFloat(e.target.value))}
+            className="flex-1 h-px bg-border appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white" />
+          <span className="text-[9px] font-[family-name:var(--font-mono)] tabular-nums w-6 text-right">${budget}</span>
+        </div>
+      </div>
+      <div>
+        <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Priority</span>
+        <div className="grid grid-cols-2 gap-1">
+          {(["cost","quality","speed","balanced"] as const).map(p => (
+            <button key={p} onClick={() => setPriority(p)}
+              className={`text-[8px] py-1 rounded font-[family-name:var(--font-mono)] transition-all capitalize ${
+                priority === p ? "bg-white/10 text-text" : "text-text-muted hover:text-text-dim bg-surface"
+              }`}>{p}</button>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={onReset} className="w-full py-1.5 rounded bg-surface text-[9px] text-text-muted hover:text-text-secondary transition-colors font-[family-name:var(--font-mono)]">Reset session</button>
+    </div>
   );
 }
