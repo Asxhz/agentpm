@@ -213,7 +213,7 @@ export default function App() {
                 <div className="text-[8px] text-[#444] font-[family-name:var(--font-mono)] space-y-0.5">
                   <div className="flex justify-between"><span>per tx</span><span>$2.00</span></div>
                   <div className="flex justify-between"><span>daily</span><span>$20.00</span></div>
-                  <div className="flex justify-between"><span>escalate</span><span>{strict ? "all" : "$0.08"}</span></div>
+                  <div className="flex justify-between"><span>escalate</span><span>{strict ? "all" : "$0.12"}</span></div>
                 </div>
               </div>
             </div>

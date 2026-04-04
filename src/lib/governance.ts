@@ -112,7 +112,7 @@ export function initGovernance() {
     {
       id: "escalation-policy",
       name: "Escalation Policy",
-      rules: [{ type: "require_approval", value: 0.08 }],
+      rules: [{ type: "require_approval", value: 0.12 }],
       createdAt: new Date().toISOString(),
       active: true,
     },
