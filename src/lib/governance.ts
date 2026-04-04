@@ -73,6 +73,10 @@ interface GovernanceState {
 
 // State
 let state: GovernanceState = { policies: [], auditLog: [], dailySpend: 0, dailyTxCount: 0, dayStart: new Date().toISOString().split("T")[0] };
+let strictMode = false;
+
+export function setStrictMode(enabled: boolean) { strictMode = enabled; }
+export function getStrictMode() { return strictMode; }
 const pendingApprovals = new Map<string, PendingApproval>();
 
 function genId(): string { return Math.random().toString(36).slice(2, 10); }
@@ -108,7 +112,7 @@ export function initGovernance() {
     {
       id: "escalation-policy",
       name: "Escalation Policy",
-      rules: [{ type: "require_approval", value: 0.50 }],
+      rules: [{ type: "require_approval", value: 0.08 }],
       createdAt: new Date().toISOString(),
       active: true,
     },
@@ -164,8 +168,13 @@ export function evaluateTransaction(
           break;
         }
         case "require_approval": {
-          const threshold = rule.value as number;
-          if (amount >= threshold) { requiresHumanApproval = true; approvalReason = `Amount $${amount.toFixed(4)} exceeds approval threshold of $${threshold.toFixed(2)}`; }
+          const threshold = strictMode ? 0.001 : (rule.value as number); // Strict mode: escalate everything
+          if (amount >= threshold) {
+            requiresHumanApproval = true;
+            approvalReason = strictMode
+              ? `Strict mode: all payments require approval ($${amount.toFixed(4)})`
+              : `Amount $${amount.toFixed(4)} exceeds approval threshold of $${threshold.toFixed(2)}`;
+          }
           break;
         }
         case "blocked_providers": {

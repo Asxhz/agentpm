@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import {
   initGovernance, getGovernanceState, getGovernanceTimeline,
   updatePolicy, resetGovernance, evaluateTransaction, recordPayment,
-  resolveApproval, getPendingApprovals,
+  resolveApproval, getPendingApprovals, setStrictMode, getStrictMode,
 } from "@/lib/governance";
 
 export async function GET() {
@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
     case "reset": {
       resetGovernance();
       return Response.json(getGovernanceState());
+    }
+    case "strict-on": {
+      setStrictMode(true);
+      return Response.json({ strictMode: true });
+    }
+    case "strict-off": {
+      setStrictMode(false);
+      return Response.json({ strictMode: false });
     }
     default:
       return Response.json({ error: "Unknown action" }, { status: 400 });

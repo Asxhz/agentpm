@@ -37,6 +37,7 @@ export default function AppPage() {
   const [sidebarTab, setSidebarTab] = useState<"wallet" | "txns" | "governance">("wallet");
   const [allTxns, setAllTxns] = useState<TxInfo[]>([]);
   const [deployedSites, setDeployedSites] = useState<{ subdomain: string; url: string; projectName: string }[]>([]);
+  const [strictModeOn, setStrictModeOn] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<{ approvalId: string; stageName: string; provider: string; amount: number; reason: string; budgetImpact: { currentSpend: number; projectedSpend: number; sessionBudget: number; percentUsed: number; remaining: number }; riskScore: number } | null>(null);
   const [govTimeline, setGovTimeline] = useState<{ id: string; type: string; amount: number; provider: string; riskScore: number }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -100,7 +101,7 @@ export default function AppPage() {
               }
               if (se.type === "payment" && sd.phase === "settled") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, paymentTxHash: sd.txHash as string, paymentAmount: sd.amount as number, newBalance: sd.newBalance as number } : s); setLiveStages([...stages]); setWallet(w => w ? { ...w, balance: sd.newBalance as number } : w); }
               if (se.type === "decision") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, provider: sd.provider as string, cost: sd.price as number } : s); setLiveStages([...stages]); }
-              if (se.type === "result") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, status: "done" as const, output: sd.output as string, txHash: sd.txHash as string, latencyMs: sd.latencyMs as number, provider: sd.provider as string, cost: sd.cost as number } : s); setLiveStages([...stages]); }
+              if (se.type === "result") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, status: "done" as const, output: sd.output as string, txHash: sd.txHash as string, latencyMs: sd.latencyMs as number, provider: sd.provider as string, cost: sd.cost as number, truthLabel: sd.truthLabel as string } : s); setLiveStages([...stages]); }
             }
             if (ev.type === "execution_complete") { summary = ev.data; refreshWallet(); }
           } catch { /* skip */ }
@@ -238,6 +239,21 @@ export default function AppPage() {
 
           {sidebarTab === "governance" && (
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {/* Strict Mode Toggle */}
+              <div className="bg-surface rounded-lg p-3 border border-border flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-medium block">Strict Mode</span>
+                  <span className="text-[7px] text-text-muted">Approve every payment</span>
+                </div>
+                <button onClick={async () => {
+                  const next = !strictModeOn;
+                  setStrictModeOn(next);
+                  await fetch("/api/governance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: next ? "strict-on" : "strict-off" }) });
+                }} className={`w-8 h-4 rounded-full transition-colors ${strictModeOn ? "bg-amber" : "bg-surface-3"}`}>
+                  <motion.div animate={{ x: strictModeOn ? 16 : 2 }} className="w-3 h-3 rounded-full bg-white" />
+                </button>
+              </div>
+
               {/* Spend Ring */}
               <div className="bg-surface rounded-lg p-3 border border-border flex items-center gap-3">
                 <SpendRing spent={wallet?.totalSpent || 0} limit={budget} />
@@ -471,6 +487,7 @@ function StageCard({ stage, index, live }: { stage: StageResult; index: number; 
                   "bg-cyan/10 text-cyan"
                 }`}>{stage.governanceVerdict}</span>}
                 {stage.paymentTxHash && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.paymentTxHash.slice(0, 18)}...</span>}
+                <TruthBadge label={(stage as unknown as Record<string, unknown>).truthLabel as string} />
                 {stage.latencyMs && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.latencyMs}ms</span>}
               </div>
               {stage.output && <div className="bg-surface-2 rounded-lg p-3 text-[11px] text-text-secondary leading-relaxed">{stage.output}</div>}
@@ -571,6 +588,17 @@ function ApprovalCard({ approval, onRespond }: {
 // ================================================================
 // SPEND RING - SVG circular progress
 // ================================================================
+
+// TRUTH BADGE - shows what's real vs simulated
+function TruthBadge({ label }: { label?: string }) {
+  if (!label) return null;
+  const styles: Record<string, string> = {
+    REAL: "bg-accent/15 text-accent",
+    TESTNET: "bg-blue/15 text-blue",
+    SIM: "bg-text-muted/15 text-text-muted",
+  };
+  return <span className={`text-[7px] font-[family-name:var(--font-mono)] font-bold px-1.5 py-0.5 rounded ${styles[label] || styles.SIM}`}>{label}</span>;
+}
 
 function SpendRing({ spent, limit, size = 44 }: { spent: number; limit: number; size?: number }) {
   const pct = Math.min(100, (spent / Math.max(limit, 0.01)) * 100);

@@ -538,12 +538,13 @@ export async function executePipeline(
         from: signerAddress,
         to: chosen.provider.walletAddress,
         realSignature: realSignature ? true : false,
+        truthLabel: realSignature ? "TESTNET" : "SIM",
         network: "base-sepolia",
         stageId: stage.id,
       });
       await delay(150);
 
-      // Simulated settlement (real settlement requires funded wallet + facilitator)
+      // Settlement (signing is real on testnet, settlement is simulated)
       const x402 = executeX402Payment(wallet.address, chosen.provider.walletAddress, chosen.provider.price, `${stage.name}: ${chosen.provider.name}`, chosen.provider.network);
       const payResult = processPayment(wallet.id, chosen.provider.walletAddress, chosen.provider.price, chosen.provider.name, chosen.provider.network);
 
@@ -561,6 +562,7 @@ export async function executePipeline(
         newBalance: wallet.balance,
         signerAddress,
         realSignature: realSignature ? true : false,
+        truthLabel: "SIM",
         stageId: stage.id,
       });
       await delay(200);
@@ -664,6 +666,7 @@ export async function executePipeline(
         stageTotal: stages.length,
         runningTotal: costTracker.runningTotal,
         attempts: attemptIndex + 1,
+        truthLabel: (stage.toolCategory === "domain" || stage.toolCategory === "deployment") ? "REAL" : "SIM",
       });
       await delay(200);
 
