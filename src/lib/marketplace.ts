@@ -371,7 +371,7 @@ export const TOOL_PROVIDERS: ToolProvider[] = [
     name: "Vercel Deploy",
     description: "Deploy static sites and Next.js apps to Vercel edge network. Real API deployment.",
     category: "deployment",
-    price: 0.10,
+    price: 0.06,
     qualityScore: 10,
     latencyMs: 15000,
     reliability: 0.99,

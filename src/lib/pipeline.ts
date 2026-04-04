@@ -321,14 +321,36 @@ async function executeStageWork(
   }
 
   if (category === "deployment") {
-    const projectName = task.match(/(?:for|called|named)\s+["']?(\w+)/i)?.[1] || "myproject";
-    const site = generateLandingPage(
-      projectName,
-      "The Future Starts Here",
-      "A next-generation product built with AI-powered autonomous execution.",
-      ["Lightning fast: Sub-50ms response times globally", "Secure by default: Enterprise-grade security built in", "Scale infinitely: From 0 to millions with zero config"],
-      "Get Started",
-    );
+    // Extract project details from the task brief
+    const projectName = task.match(/(?:for|called|named)\s+["']?([A-Za-z][A-Za-z0-9\s]{1,25})/i)?.[1]?.trim() || "MyProject";
+    const isFood = /coffee|food|restaurant|cafe|bakery|pizza|taco|burrito/i.test(task);
+    const isFitness = /fitness|gym|workout|health|yoga/i.test(task);
+    const isTech = /tech|saas|app|software|startup|api|dev/i.test(task);
+    const isEcom = /shop|store|ecommerce|product|sell/i.test(task);
+
+    const headline = isFood ? `Fresh. Local. ${projectName}.`
+      : isFitness ? `Transform Your Body with ${projectName}`
+      : isTech ? `Ship Faster with ${projectName}`
+      : isEcom ? `Discover ${projectName}`
+      : `Welcome to ${projectName}`;
+
+    const desc = isFood ? `Premium quality, crafted with care. Visit ${projectName} today.`
+      : isFitness ? `Your personalized fitness journey starts here. Join ${projectName}.`
+      : isTech ? `${projectName} helps teams build, ship, and scale faster than ever.`
+      : isEcom ? `Shop the latest from ${projectName}. Quality you can trust.`
+      : `${projectName} is built for the future. See what we can do.`;
+
+    const features = isFood
+      ? [`Fresh Ingredients: Locally sourced, always fresh`, `Quick Service: Order ahead, skip the line`, `Community: Your neighborhood gathering spot`]
+      : isFitness
+      ? [`Personal Training: Tailored workouts for your goals`, `Flexible Plans: No contracts, cancel anytime`, `Track Progress: Real-time metrics and insights`]
+      : isTech
+      ? [`Fast Setup: Deploy in minutes, not weeks`, `Scalable: From prototype to production seamlessly`, `Secure: Enterprise-grade security built in`]
+      : [`Quality: Built with care and attention to detail`, `Reliable: 99.9% uptime guaranteed`, `Support: We are here when you need us`];
+
+    const color = isFood ? "#c2703e" : isFitness ? "#3b82f6" : isTech ? "#22c55e" : isEcom ? "#8b5cf6" : "#ededed";
+
+    const site = generateLandingPage(projectName, headline, desc, features, "Get Started", color);
     const larpResult = await deployToLarpClick(site, projectName);
     const vercelResult = await deployToVercel(site, projectName);
 
@@ -345,9 +367,23 @@ async function executeStageWork(
   }
 
   // Simulated execution for other categories
+  // Personalize output with project context from the task brief
   await delay(Math.min(latencyMs / 5, 1500));
   const outputs = STAGE_OUTPUTS[category] || STAGE_OUTPUTS["text-generation"];
-  return outputs[Math.floor(Math.random() * outputs.length)];
+  let output = outputs[Math.floor(Math.random() * outputs.length)];
+
+  // Extract project name and inject into output to make it feel specific
+  const projectName = task.match(/(?:for|called|named)\s+["']?([A-Z][a-zA-Z0-9\s]+)/)?.[1]?.trim()
+    || task.match(/(?:build|create|make|launch|deploy)\s+(?:a\s+)?(?:landing\s+page\s+)?(?:for\s+)?(?:a\s+)?(?:my\s+)?(.{3,30}?)(?:\s+(?:and|with|under|using|on|site|page|app))/i)?.[1]?.trim()
+    || "";
+  if (projectName && projectName.length > 2) {
+    output = `[${providerName} via ${stage.name}] ${output}`;
+    // Replace generic references with the project name
+    output = output.replace(/the product/gi, projectName);
+    output = output.replace(/your product/gi, projectName);
+  }
+
+  return `[SIM] ${output}`;
 }
 
 // Main pipeline — with retry, cost tracking, quality gates, and timing
