@@ -154,9 +154,8 @@ export async function deployToLarpClick(
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: subdomain,
+        name: "agentpay-router",
         files: fileUploads,
-        target: "production",
         projectSettings: { framework: null },
       }),
     });
