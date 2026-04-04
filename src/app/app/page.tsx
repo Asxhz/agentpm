@@ -59,7 +59,7 @@ export default function AppPage() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, liveStages]);
 
   const resetAll = useCallback(async () => {
-    await fetch("/api/wallet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset", balance: 10.0 }) });
+    await fetch("/api/wallet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset", balance: 50.0 }) });
     refreshWallet(); setMessages([]); setLiveStages([]); setAllTxns([]);
   }, [refreshWallet]);
 

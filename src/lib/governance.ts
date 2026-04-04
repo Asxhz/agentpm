@@ -80,10 +80,10 @@ export function initGovernance() {
       id: "default-safety",
       name: "Default Safety Policy",
       rules: [
-        { type: "max_per_tx", value: 0.50 },
-        { type: "max_daily", value: 5.00 },
+        { type: "max_per_tx", value: 2.00 },
+        { type: "max_daily", value: 20.00 },
         { type: "allowed_chains", value: ["base-sepolia", "base"] },
-        { type: "rate_limit", value: 30 }, // max 30 tx/day
+        { type: "rate_limit", value: 100 },
       ],
       createdAt: new Date().toISOString(),
       active: true,
@@ -113,7 +113,7 @@ export function initGovernance() {
     {
       id: "high-value-approval",
       name: "High-Value Approval Gate",
-      rules: [{ type: "require_approval", value: 0.25 }],
+      rules: [{ type: "require_approval", value: 1.00 }],
       createdAt: new Date().toISOString(),
       active: true,
     },

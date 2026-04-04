@@ -205,6 +205,7 @@ export async function deployToLarpClick(
         name: "agentpay-router",
         files: fileUploads,
         projectSettings: { framework: null },
+        meta: { subdomain, projectName, source: "agentpm" },
       }),
     });
 

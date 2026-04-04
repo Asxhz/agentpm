@@ -357,7 +357,7 @@ export async function executePipeline(
   onEvent: EventEmitter
 ): Promise<PipelineResult> {
   const results: ExecutionResult[] = [];
-  const wallet = initializeWallets(parseFloat(process.env.DEMO_WALLET_BALANCE || "10.00"));
+  const wallet = initializeWallets(parseFloat(process.env.DEMO_WALLET_BALANCE || "50.00"));
   initGovernance();
 
   const pipelineStartTime = Date.now();
