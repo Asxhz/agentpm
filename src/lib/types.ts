@@ -181,7 +181,13 @@ export type StreamEventType =
   | "complete"
   | "retry"
   | "quality_gate"
-  | "cost_update";
+  | "cost_update"
+  | "approval_required"
+  | "budget_exceeded"
+  | "governance_denied"
+  | "governance_downgrade"
+  | "governance_reroute"
+  | "pipeline_paused";
 
 export interface StreamEvent {
   type: StreamEventType;
@@ -193,6 +199,8 @@ export interface PipelineResult {
   task: string;
   steps: ExecutionResult[];
   totalCost: number;
+  pendingApprovalId?: string;
+  pendingStageIndex?: number;
   totalLatencyMs: number;
   walletBalance: number;
   transactions: Transaction[];

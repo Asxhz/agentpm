@@ -169,9 +169,30 @@ IMPORTANT RULES:
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { message, sessionId = "default", budget = 5, priority = "balanced" } = body as {
+  const { message, sessionId = "default", budget = 5, priority = "balanced", approvalResponse } = body as {
     message: string; sessionId?: string; budget?: number; priority?: string;
+    approvalResponse?: { approvalId: string; approved: boolean };
   };
+
+  // Handle approval responses
+  if (approvalResponse) {
+    const { resolveApproval } = await import("@/lib/governance");
+    resolveApproval(approvalResponse.approvalId, approvalResponse.approved);
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const msg = approvalResponse.approved
+          ? "Approval granted. Continuing pipeline execution..."
+          : "Approval denied. Pipeline halted. No payment was made.";
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text_delta", data: { text: msg } })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    const history = getConvo(sessionId);
+    history.push({ role: "assistant", content: approvalResponse.approved ? "Approval granted." : "Approval denied. Pipeline halted." });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
 
   if (!message?.trim()) {
     return new Response(JSON.stringify({ error: "Message required" }), { status: 400 });
@@ -221,10 +242,21 @@ export async function POST(req: NextRequest) {
           const config: PipelineConfig = { budget, priority: priority as PipelineConfig["priority"], riskTolerance: "medium", maxSteps: 10 };
 
           const pipelineEvents: StreamEvent[] = [];
-          await executePipeline(brief, config, (ev: StreamEvent) => {
+          const pipelineResult = await executePipeline(brief, config, (ev: StreamEvent) => {
             pipelineEvents.push(ev);
             send("stage_event", ev);
           });
+
+          // Check if pipeline halted for approval
+          if (pipelineResult.pendingApprovalId) {
+            send("pipeline_paused", {
+              approvalId: pipelineResult.pendingApprovalId,
+              completedStages: pipelineResult.steps.length,
+              spent: pipelineResult.totalCost,
+            });
+            history.push({ role: "assistant", content: `[Pipeline paused: awaiting approval for stage ${(pipelineResult.pendingStageIndex ?? 0) + 1}. Spent $${pipelineResult.totalCost.toFixed(4)} so far.]` });
+            // Don't emit execution_complete - pipeline is paused
+          }
 
           const done = pipelineEvents.find(e => e.type === "complete");
           if (done) {

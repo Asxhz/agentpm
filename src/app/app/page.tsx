@@ -12,7 +12,7 @@ const USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 const USDC_ABI = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
 interface ChatMessage { id: string; role: "user" | "assistant"; content: string; stages?: StageResult[]; summary?: Record<string, unknown>; timestamp: string; isStreaming?: boolean }
-interface StageResult { stageId: string; stageName: string; stageDescription?: string; stageIndex: number; stageTotal: number; provider?: string; cost?: number; output?: string; txHash?: string; latencyMs?: number; status: "pending" | "running" | "done"; providers?: { name: string; price: number; quality: number; latency: number; score: number }[]; governancePassed?: boolean; paymentTxHash?: string; paymentAmount?: number; newBalance?: number }
+interface StageResult { stageId: string; stageName: string; stageDescription?: string; stageIndex: number; stageTotal: number; provider?: string; cost?: number; output?: string; txHash?: string; latencyMs?: number; status: "pending" | "running" | "done"; providers?: { name: string; price: number; quality: number; latency: number; score: number }[]; governancePassed?: boolean; governanceVerdict?: string; paymentTxHash?: string; paymentAmount?: number; newBalance?: number }
 interface WalletInfo { balance: number; address: string; totalSpent: number; txCount: number }
 interface TxInfo { toolName: string; amount: number; txHash: string; status: string }
 
@@ -34,9 +34,11 @@ export default function AppPage() {
   const [liveStages, setLiveStages] = useState<StageResult[]>([]);
   const [budget, setBudget] = useState(5);
   const [priority, setPriority] = useState("balanced");
-  const [sidebarTab, setSidebarTab] = useState<"wallet" | "txns" | "config">("wallet");
+  const [sidebarTab, setSidebarTab] = useState<"wallet" | "txns" | "governance">("wallet");
   const [allTxns, setAllTxns] = useState<TxInfo[]>([]);
   const [deployedSites, setDeployedSites] = useState<{ subdomain: string; url: string; projectName: string }[]>([]);
+  const [pendingApproval, setPendingApproval] = useState<{ approvalId: string; stageName: string; provider: string; amount: number; reason: string; budgetImpact: { currentSpend: number; projectedSpend: number; sessionBudget: number; percentUsed: number; remaining: number }; riskScore: number } | null>(null);
+  const [govTimeline, setGovTimeline] = useState<{ id: string; type: string; amount: number; provider: string; riskScore: number }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,7 +89,15 @@ export default function AppPage() {
               const se = ev.data as Record<string, unknown>; const sd = se.data as Record<string, unknown>;
               if (se.type === "discovery") { stages = [...stages, { stageId: sd.stageId as string, stageName: sd.stageName as string, stageDescription: sd.stageDescription as string, stageIndex: sd.stageIndex as number, stageTotal: sd.stageTotal as number, status: "running" }]; setLiveStages([...stages]); }
               if (se.type === "evaluation") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, providers: sd.providers as StageResult["providers"] } : s); setLiveStages([...stages]); }
-              if (se.type === "governance") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, governancePassed: sd.allowed as boolean } : s); setLiveStages([...stages]); }
+              if (se.type === "governance") {
+                const verdict = sd.verdict as string || (sd.allowed ? "APPROVED" : "DENIED");
+                stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, governancePassed: verdict === "APPROVED", governanceVerdict: verdict } : s);
+                setLiveStages([...stages]);
+                if (sd.budgetImpact) setGovTimeline(prev => [...prev, { id: Math.random().toString(36).slice(2), type: verdict, amount: (sd.budgetImpact as Record<string, number>).projectedSpend - (sd.budgetImpact as Record<string, number>).currentSpend, provider: "", riskScore: sd.riskScore as number || 0 }]);
+              }
+              if (se.type === "approval_required") {
+                setPendingApproval(sd as typeof pendingApproval);
+              }
               if (se.type === "payment" && sd.phase === "settled") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, paymentTxHash: sd.txHash as string, paymentAmount: sd.amount as number, newBalance: sd.newBalance as number } : s); setLiveStages([...stages]); setWallet(w => w ? { ...w, balance: sd.newBalance as number } : w); }
               if (se.type === "decision") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, provider: sd.provider as string, cost: sd.price as number } : s); setLiveStages([...stages]); }
               if (se.type === "result") { stages = stages.map(s => s.stageId === (sd.stageId as string) ? { ...s, status: "done" as const, output: sd.output as string, txHash: sd.txHash as string, latencyMs: sd.latencyMs as number, provider: sd.provider as string, cost: sd.cost as number } : s); setLiveStages([...stages]); }
@@ -130,7 +140,7 @@ export default function AppPage() {
         {/* SIDEBAR */}
         <aside className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
           <div className="flex border-b border-border">
-            {(["wallet", "txns", "config"] as const).map(t => (
+            {(["wallet", "txns", "governance"] as const).map(t => (
               <button key={t} onClick={() => setSidebarTab(t)}
                 className={`flex-1 py-2 text-[9px] font-medium uppercase tracking-wider transition-colors ${sidebarTab === t ? "text-text border-b border-text" : "text-text-muted hover:text-text-dim"}`}>
                 {t === "wallet" ? "Wallet" : t === "txns" ? `Activity` : "Config"}
@@ -226,19 +236,51 @@ export default function AppPage() {
             </div>
           )}
 
-          {sidebarTab === "config" && (
+          {sidebarTab === "governance" && (
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {/* Spend Ring */}
+              <div className="bg-surface rounded-lg p-3 border border-border flex items-center gap-3">
+                <SpendRing spent={wallet?.totalSpent || 0} limit={budget} />
+                <div>
+                  <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block">Budget Used</span>
+                  <span className="text-sm font-semibold font-[family-name:var(--font-mono)] tabular-nums">${(wallet?.totalSpent || 0).toFixed(3)}</span>
+                  <span className="text-[8px] text-text-muted"> / ${budget}</span>
+                </div>
+              </div>
+
+              {/* Policy Limits */}
               <div className="bg-surface rounded-lg p-3 border border-border">
-                <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Policy Limits</span>
+                <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Active Policies</span>
                 <div className="space-y-1 text-[9px] font-[family-name:var(--font-mono)]">
-                  <div className="flex justify-between"><span className="text-text-muted">per tx</span><span>$0.50</span></div>
-                  <div className="flex justify-between"><span className="text-text-muted">daily</span><span>$5.00</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">per tx max</span><span>$2.00</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">daily max</span><span>$20.00</span></div>
+                  <div className="flex justify-between"><span className="text-text-muted">escalation at</span><span className="text-amber">$0.50</span></div>
                   <div className="flex justify-between"><span className="text-text-muted">network</span><span>base-sepolia</span></div>
                 </div>
               </div>
+
+              {/* Decision Timeline */}
+              <div className="bg-surface rounded-lg p-3 border border-border">
+                <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Decision Timeline</span>
+                {govTimeline.length === 0 ? <p className="text-[8px] text-text-muted">No decisions yet</p> : (
+                  <div className="space-y-1">
+                    {govTimeline.slice(0, 10).map(e => (
+                      <div key={e.id} className="flex items-center gap-1.5 text-[8px]">
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                          e.type === "APPROVED" ? "bg-accent" : e.type === "DENIED" ? "bg-red" : e.type === "ESCALATE" ? "bg-amber" : e.type === "DOWNGRADE" ? "bg-purple" : "bg-cyan"
+                        }`} />
+                        <span className="text-text-muted font-[family-name:var(--font-mono)]">{e.type}</span>
+                        <span className="text-text-muted ml-auto tabular-nums font-[family-name:var(--font-mono)]">${e.amount.toFixed(3)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Deployed Sites */}
               <div className="bg-surface rounded-lg p-3 border border-border">
                 <span className="text-[8px] font-medium uppercase tracking-widest text-text-dim block mb-1.5">Deployed Sites</span>
-                {deployedSites.length === 0 ? <p className="text-[8px] text-text-muted">No deployments yet</p> : (
+                {deployedSites.length === 0 ? <p className="text-[8px] text-text-muted">No deployments</p> : (
                   deployedSites.map(s => (
                     <a key={s.subdomain} href={s.url} target="_blank" rel="noopener noreferrer" className="block text-[8px] text-accent hover:underline font-[family-name:var(--font-mono)]">{s.url}</a>
                   ))
@@ -323,7 +365,23 @@ export default function AppPage() {
                   <div className="flex-1 space-y-2">{liveStages.map((s, i) => <StageCard key={s.stageId} stage={s} index={i} live />)}</div>
                 </div>
               )}
-              {isLoading && liveStages.length === 0 && messages[messages.length - 1]?.role === "user" && (
+              {/* Approval Card */}
+              {pendingApproval && (
+                <ApprovalCard approval={pendingApproval} onRespond={async (id, approved) => {
+                  setPendingApproval(null);
+                  setIsLoading(true);
+                  try {
+                    const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "", sessionId, approvalResponse: { approvalId: id, approved } }) });
+                    const reader = res.body?.getReader(); if (!reader) return;
+                    const dec = new TextDecoder(); let buf = ""; let ac = "";
+                    const aId = (Date.now() + 1).toString();
+                    setMessages(prev => [...prev, { id: aId, role: "assistant", content: "", timestamp: new Date().toISOString(), isStreaming: true }]);
+                    while (true) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); const lines = buf.split("\n"); buf = lines.pop() || ""; for (const line of lines) { if (!line.startsWith("data: ")) continue; const raw = line.slice(6).trim(); if (raw === "[DONE]") continue; try { const ev = JSON.parse(raw); if (ev.type === "text_delta") { ac += ev.data.text; setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: ac } : m)); } } catch {} } }
+                    setMessages(prev => prev.map(m => m.id === aId ? { ...m, isStreaming: false } : m));
+                  } finally { setIsLoading(false); refreshWallet(); }
+                }} />
+              )}
+              {isLoading && liveStages.length === 0 && !pendingApproval && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex gap-3 py-4">
                   <div className="h-6 w-6 rounded-lg bg-accent/15 flex items-center justify-center shrink-0"><svg width="12" height="12" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="url(#lg5)" /><path d="M10 16.5L14 20.5L22 12.5" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /><defs><linearGradient id="lg5" x1="0" y1="0" x2="32" y2="32"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#06b6d4" /></linearGradient></defs></svg></div>
                   <div className="flex items-center gap-1.5 pt-1">
@@ -405,7 +463,13 @@ function StageCard({ stage, index, live }: { stage: StageResult; index: number; 
                 </div>
               )}
               <div className="flex flex-wrap gap-1.5">
-                {stage.governancePassed !== undefined && <span className={`px-2 py-0.5 rounded text-[8px] font-medium ${stage.governancePassed ? "bg-accent/10 text-accent" : "bg-red/10 text-red"}`}>policy {stage.governancePassed ? "passed" : "denied"}</span>}
+                {stage.governanceVerdict && <span className={`px-2 py-0.5 rounded text-[8px] font-medium ${
+                  stage.governanceVerdict === "APPROVED" ? "bg-accent/10 text-accent" :
+                  stage.governanceVerdict === "DENIED" ? "bg-red/10 text-red" :
+                  stage.governanceVerdict === "ESCALATE" ? "bg-amber/10 text-amber" :
+                  stage.governanceVerdict === "DOWNGRADE" ? "bg-purple/10 text-purple" :
+                  "bg-cyan/10 text-cyan"
+                }`}>{stage.governanceVerdict}</span>}
                 {stage.paymentTxHash && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.paymentTxHash.slice(0, 18)}...</span>}
                 {stage.latencyMs && <span className="px-2 py-0.5 rounded text-[8px] font-[family-name:var(--font-mono)] bg-surface-2 text-text-muted">{stage.latencyMs}ms</span>}
               </div>
@@ -437,5 +501,97 @@ function SummaryCard({ data }: { data: Record<string, unknown> }) {
         ))}
       </div>
     </motion.div>
+  );
+}
+
+// ================================================================
+// APPROVAL CARD - Interactive governance decision
+// ================================================================
+
+function ApprovalCard({ approval, onRespond }: {
+  approval: { approvalId: string; stageName: string; provider: string; amount: number; reason: string; budgetImpact: { currentSpend: number; projectedSpend: number; sessionBudget: number; percentUsed: number; remaining: number }; riskScore: number };
+  onRespond: (approvalId: string, approved: boolean) => void;
+}) {
+  const [responding, setResponding] = useState(false);
+  const bi = approval.budgetImpact;
+  const riskColor = approval.riskScore < 30 ? "text-accent" : approval.riskScore < 70 ? "text-amber" : "text-red";
+  const riskBg = approval.riskScore < 30 ? "bg-accent/10" : approval.riskScore < 70 ? "bg-amber/10" : "bg-red/10";
+
+  return (
+    <motion.div initial={{ opacity: 0, scale: 0.97, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+      className="rounded-xl border border-amber/40 bg-amber/5 p-4 my-4 max-w-2xl mx-auto">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-amber">Approval Required</span>
+        <span className={`text-[8px] font-[family-name:var(--font-mono)] px-2 py-0.5 rounded ${riskBg} ${riskColor}`}>risk {approval.riskScore}/100</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div><span className="text-[8px] text-text-dim block">Stage</span><span className="text-xs font-medium">{approval.stageName}</span></div>
+        <div><span className="text-[8px] text-text-dim block">Provider</span><span className="text-xs font-[family-name:var(--font-mono)]">{approval.provider}</span></div>
+        <div><span className="text-[8px] text-text-dim block">Amount</span><span className="text-xs font-[family-name:var(--font-mono)] font-semibold tabular-nums">${approval.amount.toFixed(4)}</span></div>
+      </div>
+
+      <div className="text-[10px] text-text-dim mb-3">{approval.reason}</div>
+
+      {/* Budget impact bar */}
+      <div className="mb-3">
+        <div className="flex justify-between text-[8px] text-text-muted mb-1">
+          <span>Budget impact</span>
+          <span className="tabular-nums font-[family-name:var(--font-mono)]">${bi.projectedSpend.toFixed(3)} / ${bi.sessionBudget.toFixed(2)}</span>
+        </div>
+        <div className="h-2 bg-surface-2 rounded-full overflow-hidden flex">
+          <div className="h-full bg-accent rounded-l-full" style={{ width: `${(bi.currentSpend / bi.sessionBudget) * 100}%` }} />
+          <motion.div initial={{ width: 0 }} animate={{ width: `${(approval.amount / bi.sessionBudget) * 100}%` }} className="h-full bg-amber" />
+        </div>
+        <div className="flex justify-between text-[7px] text-text-muted mt-0.5 font-[family-name:var(--font-mono)]">
+          <span>${bi.currentSpend.toFixed(3)} spent</span>
+          <span>${bi.remaining.toFixed(3)} remaining after</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={() => { setResponding(true); onRespond(approval.approvalId, true); }}
+          disabled={responding}
+          className="flex-1 h-9 rounded-lg bg-accent text-[#09090b] text-xs font-semibold disabled:opacity-50 transition-colors">
+          {responding ? "Approving..." : "Approve Payment"}
+        </motion.button>
+        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          onClick={() => { setResponding(true); onRespond(approval.approvalId, false); }}
+          disabled={responding}
+          className="flex-1 h-9 rounded-lg bg-red/10 text-red text-xs font-semibold border border-red/20 disabled:opacity-50 transition-colors">
+          {responding ? "Denying..." : "Deny"}
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ================================================================
+// SPEND RING - SVG circular progress
+// ================================================================
+
+function SpendRing({ spent, limit, size = 44 }: { spent: number; limit: number; size?: number }) {
+  const pct = Math.min(100, (spent / Math.max(limit, 0.01)) * 100);
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (pct / 100) * circ;
+  const color = pct < 50 ? "#22c55e" : pct < 80 ? "#f59e0b" : "#ef4444";
+
+  return (
+    <svg width={size} height={size} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#27272a" strokeWidth="3" />
+      <motion.circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="3"
+        strokeLinecap="round" strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: offset }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central"
+        className="text-[8px] font-[family-name:var(--font-mono)] font-bold" fill="#a1a1aa">
+        {Math.round(pct)}%
+      </text>
+    </svg>
   );
 }

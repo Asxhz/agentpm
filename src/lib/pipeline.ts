@@ -11,7 +11,7 @@ import {
 } from "./types";
 import { initializeWallets, processPayment, getWalletState } from "./wallet";
 import { executeX402Payment } from "./payment";
-import { initGovernance, evaluatePayment as govCheck, recordPayment as govRecord } from "./governance";
+import { initGovernance, evaluateTransaction, recordPayment, createApproval } from "./governance";
 import { getProvidersByCategory } from "./marketplace";
 import { searchDomains, purchaseDomain } from "./agents/domain";
 import { generateLandingPage, deployToVercel, deployToLarpClick } from "./agents/deploy";
@@ -459,20 +459,62 @@ export async function executePipeline(
       });
       await delay(200);
 
-      // Governance check
-      const gov = govCheck(chosen.provider.price, stage.toolCategory, chosen.provider.network, chosen.provider.name);
+      // Governance check (5 verdicts: APPROVED, DENIED, ESCALATE, DOWNGRADE, REROUTE)
+      const decision = evaluateTransaction(
+        chosen.provider.price, stage.toolCategory, chosen.provider.network, chosen.provider.name,
+        config.budget, costTracker.runningTotal,
+      );
+
       emit(onEvent, "governance", {
-        message: gov.allowed ? "Policy check passed" : `Policy denied: ${gov.violations[0]?.message}`,
-        allowed: gov.allowed,
+        verdict: decision.verdict,
+        message: decision.verdict === "APPROVED" ? "Policy check passed" :
+          decision.verdict === "ESCALATE" ? `Requires approval: ${decision.approvalReason}` :
+          decision.verdict === "DOWNGRADE" ? `Downgrading: ${decision.suggestedAction?.detail}` :
+          decision.verdict === "REROUTE" ? `Rerouting: ${decision.suggestedAction?.detail}` :
+          `Denied: ${decision.violations[0]?.message}`,
         stageId: stage.id,
+        riskScore: decision.riskScore,
+        budgetImpact: decision.budgetImpact,
+        decision,
       });
 
-      if (!gov.allowed) {
-        emit(onEvent, "error", { message: `Governance blocked ${chosen.provider.name} — trying next provider`, stageId: stage.id });
+      if (decision.verdict === "DENIED") {
+        emit(onEvent, "governance_denied", { stageId: stage.id, reason: decision.violations[0]?.message });
         attemptIndex++;
         continue;
       }
-      govRecord(chosen.provider.price);
+
+      if (decision.verdict === "ESCALATE") {
+        const approval = createApproval("pipeline", stage.id, stage.name, chosen.provider.name, chosen.provider.price, stage.toolCategory, decision);
+        emit(onEvent, "approval_required", {
+          approvalId: approval.id,
+          stageId: stage.id,
+          stageName: stage.name,
+          provider: chosen.provider.name,
+          amount: chosen.provider.price,
+          reason: decision.approvalReason,
+          budgetImpact: decision.budgetImpact,
+          riskScore: decision.riskScore,
+        });
+        // Return partial result - pipeline halts for human approval
+        const { wallet: finalWallet, transactions } = getWalletState();
+        return { task, steps: results, totalCost: costTracker.runningTotal, totalLatencyMs: 0, walletBalance: finalWallet?.balance ?? 0, transactions, pendingApprovalId: approval.id, pendingStageIndex: i };
+      }
+
+      if (decision.verdict === "DOWNGRADE") {
+        emit(onEvent, "governance_downgrade", { stageId: stage.id, message: decision.suggestedAction?.detail });
+        attemptIndex++;
+        continue;
+      }
+
+      if (decision.verdict === "REROUTE") {
+        emit(onEvent, "governance_reroute", { stageId: stage.id, message: decision.suggestedAction?.detail });
+        attemptIndex++;
+        continue;
+      }
+
+      // APPROVED - proceed with payment
+      recordPayment(chosen.provider.price);
       await delay(200);
 
       // x402 Payment
