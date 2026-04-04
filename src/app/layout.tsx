@@ -16,9 +16,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgentPay Router",
+  title: "AgentPM",
   description:
-    "Autonomous payment routing for AI agents. Built on Open Wallet Standard and x402.",
+    "Policy-controlled delegated spending runtime for autonomous agents. Built on Open Wallet Standard and x402.",
 };
 
 export default function RootLayout({
