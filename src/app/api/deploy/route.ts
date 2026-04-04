@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { generateLandingPage, deployToVercel, deployToLarpClick, getAllLarpClickSites } from "@/lib/agents/deploy";
 
 export async function GET() {
-  return Response.json({ sites: getAllLarpClickSites() });
+  return Response.json({ sites: await getAllLarpClickSites() });
 }
 
 export async function POST(req: NextRequest) {
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
         features: string[]; ctaText: string; brandColor?: string; subdomain?: string;
       };
       const site = generateLandingPage(projectName, headline, description, features, ctaText, brandColor);
-      const result = deployToLarpClick(site, projectName, subdomain);
+      const result = await deployToLarpClick(site, projectName, subdomain);
       return Response.json(result);
     }
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "list": {
-      return Response.json({ sites: getAllLarpClickSites() });
+      return Response.json({ sites: await getAllLarpClickSites() });
     }
 
     default:

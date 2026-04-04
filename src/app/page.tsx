@@ -17,6 +17,7 @@ export default function Landing() {
           <span className="text-sm font-semibold tracking-tight">AgentPM</span>
         </div>
         <div className="flex items-center gap-6">
+          <Link href="/hosting" className="text-[11px] text-text-dim hover:text-text transition-colors">Hosting</Link>
           <span className="text-[11px] text-text-dim font-[family-name:var(--font-mono)]">OWS Hackathon 2026</span>
           <Link href="/app">
             <motion.span whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
