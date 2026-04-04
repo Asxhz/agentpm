@@ -203,10 +203,10 @@ function pickProvider(category: string, priority: string) {
   const providers = getProvidersByCategory(category);
   if (providers.length === 0) return null;
 
-  const weights = priority === "cost" ? { p: 0.5, q: 0.2, l: 0.15, r: 0.15 }
-    : priority === "quality" ? { p: 0.1, q: 0.5, l: 0.15, r: 0.25 }
-    : priority === "speed" ? { p: 0.15, q: 0.15, l: 0.5, r: 0.2 }
-    : { p: 0.25, q: 0.3, l: 0.2, r: 0.25 };
+  const weights = priority === "cost" ? { p: 0.55, q: 0.15, l: 0.15, r: 0.15 }
+    : priority === "quality" ? { p: 0.0, q: 0.65, l: 0.1, r: 0.25 }
+    : priority === "speed" ? { p: 0.15, q: 0.15, l: 0.55, r: 0.15 }
+    : { p: 0.2, q: 0.35, l: 0.2, r: 0.25 };
 
   const maxP = Math.max(...providers.map(p => p.price));
   const minP = Math.min(...providers.map(p => p.price));
