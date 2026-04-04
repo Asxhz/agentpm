@@ -4,3 +4,4 @@ node_modules/
 .env.local
 references/
 .vercel
+.larp-sites/
